@@ -19,6 +19,7 @@ export class Editor {
     $("#edColor").oninput = (e) => { const d = this.doc(); if (!d) return; const sel = d.edits.sel; if (sel && sel.color !== undefined && sel.type !== "whiteout") { this.snapPage(d, sel.n); sel.color = e.target.value; this.draw(d, sel.n); } };
     $("#edBold").onchange = (e) => { const d = this.doc(); if (!d) return; const sel = d.edits.sel; if (sel && sel.type === "text") { this.snapPage(d, sel.n); sel.bold = e.target.checked; this.draw(d, sel.n); } };
     $("#edUndo").onclick = () => this.undo(); $("#edRedo").onclick = () => this.redo(); $("#edDel").onclick = () => this.deleteSel();
+    $("#ocrPage").onclick = () => { const d = this.doc(); if (d) this.app.tools.ocrEditable(d, "page"); }; $("#ocrAll").onclick = () => { const d = this.doc(); if (d) this.app.tools.ocrEditable(d, "all"); }; $("#ocrClose").onclick = () => { this.ocrDismissed = true; this.hideOcrBar(); $("#edHint").textContent = t("edit.hint.overImage"); };
     $("#edImgInput").onchange = async () => { const f = $("#edImgInput").files[0]; $("#edImgInput").value = ""; if (f) await this.useImageFile(f); };
     document.addEventListener("keydown", (e) => {
       const d = this.doc(); if (!d || this.textBox) return; const tag = (e.target.tagName || "").toLowerCase(); if (tag === "input" || tag === "textarea" || tag === "select") return;
@@ -41,7 +42,7 @@ export class Editor {
     d.edits.active = true; if (d.rotation) { d.rotation = 0; d.relayout(); }
     $("#editbar").hidden = false; this.app.viewport.classList.add("editing"); this.setMode(this.mode); this.attachAll(d);
   }
-  leave(d) { this.commitText(); if (this.crop) this.cancelCrop(); if (d && d.edits) { d.edits.active = false; d.edits.sel = null; for (const p of d.pages) if (p.ov) { p.ov.remove(); p.ov = null; p.octx = null; } } $("#editbar").hidden = true; this.app.viewport.classList.remove("editing"); }
+  leave(d) { this.commitText(); this.hideOcrBar(); if (this.crop) this.cancelCrop(); if (d && d.edits) { d.edits.active = false; d.edits.sel = null; for (const p of d.pages) if (p.ov) { p.ov.remove(); p.ov = null; p.octx = null; } } $("#editbar").hidden = true; this.app.viewport.classList.remove("editing"); }
   attachAll(d) { for (const p of d.pages) this.ensureOverlay(d, p); }
   ensureOverlay(d, p) {
     if (!d.edits || !d.edits.active || !p.el || !p.vp) return;
@@ -52,12 +53,16 @@ export class Editor {
   async loadTextItems(d, p) {
     if (d.edits.textItems[p.n]) return; d.edits.textItems[p.n] = [];
     try { const tc = await p.base.page.getTextContent(); d.edits.textItems[p.n] = tc.items.filter((it) => it.str && it.str.trim()).map((it) => { const [a, b, c, dd, e, f] = it.transform; const h = Math.hypot(b, dd) || it.height || 10; return { x: e, y: f, w: it.width || it.str.length * h * 0.5, h, str: it.str }; }); } catch {}
-    if (this.mode === "edittext") { this.draw(d, p.n); if (p.n === d.current && !d.edits.textItems[p.n].length) $("#edHint").textContent = t("edit.hint.noText"); }
+    if (this.mode === "edittext") { this.draw(d, p.n); if (p.n === d.current) this.checkOcr(d); }
   }
+  /** Scanned page in "Edit text" mode → offer OCR (bar under the toolbar) instead of a dead end. */
+  checkOcr(d) { if (!d || !d.edits || !d.edits.active || this.mode !== "edittext") return this.hideOcrBar(); const items = d.edits.textItems[d.current]; if (!items) return; const scanned = items.length === 0; if (scanned && !this.ocrDismissed) { $("#ocrbar").hidden = false; $("#edHint").textContent = t("edit.hint.noText"); } else this.hideOcrBar(); }
+  hideOcrBar() { $("#ocrbar").hidden = true; }
   setMode(m) {
     if (this.crop) this.cancelCrop(); this.mode = m; const d = this.doc(); if (d) { d.edits.sel = null; this.commitText(); }
     $$("#edModes button").forEach((b) => b.classList.toggle("on", b.dataset.m === m)); $("#edHint").textContent = t("edit.hint." + m);
     if (m === "image") this.pickImage(); if (m === "signature") this.signatureDialog(); if (d) this.draw(d);
+    if (m === "edittext" && d) { this.ocrDismissed = false; const p = d.pages[d.current - 1]; if (p) this.loadTextItems(d, p); this.checkOcr(d); } else this.hideOcrBar();
   }
   list(d, n) { return (d.edits.objs[n] ||= []); }
   clone(o) { return JSON.parse(JSON.stringify(o, (k, v) => (k === "img" ? undefined : v))); }
@@ -66,6 +71,9 @@ export class Editor {
   undo() { const d = this.doc(); if (!d) return; const h = d.edits.undo.pop(); if (!h) return; d.edits.redo.push({ n: h.n, data: this.list(d, h.n).map((o) => ({ ...this.clone(o), img: o.img })) }); d.edits.objs[h.n] = h.data; d.edits.sel = null; this.draw(d, h.n); }
   redo() { const d = this.doc(); if (!d) return; const h = d.edits.redo.pop(); if (!h) return; d.edits.undo.push({ n: h.n, data: this.list(d, h.n).map((o) => ({ ...this.clone(o), img: o.img })) }); d.edits.objs[h.n] = h.data; d.edits.sel = null; this.draw(d, h.n); }
   deleteSel() { const d = this.doc(); if (!d || !d.edits.sel) return; const o = d.edits.sel; this.snapPage(d, o.n); d.edits.objs[o.n] = this.list(d, o.n).filter((x) => x !== o); d.edits.sel = null; this.draw(d, o.n); }
+  duplicateSel() { const d = this.doc(); if (!d || !d.edits.sel) return; const o = d.edits.sel; this.snapPage(d, o.n); const c = { ...this.clone(o), img: o.img }; this.moveObj(c, 12, -12); this.list(d, o.n).push(c); this.selectObj(d, c); this.draw(d, o.n); }
+  bringToFront() { const d = this.doc(); if (!d || !d.edits.sel) return; const o = d.edits.sel; this.snapPage(d, o.n); const a = this.list(d, o.n); a.splice(a.indexOf(o), 1); a.push(o); this.draw(d, o.n); }
+  sendToBack() { const d = this.doc(); if (!d || !d.edits.sel) return; const o = d.edits.sel; this.snapPage(d, o.n); const a = this.list(d, o.n); a.splice(a.indexOf(o), 1); a.unshift(o); this.draw(d, o.n); }
   hasEdits(d) { return !!(d && d.edits && Object.values(d.edits.objs).some((a) => a.length)); }
   selectObj(d, o) { d.edits.sel = o; if (o) { if (o.type === "text") { $("#edSize").value = o.size; $("#edSizeV").textContent = o.size; $("#edBold").checked = !!o.bold; } if (o.color && o.type !== "highlight") $("#edColor").value = o.color; } }
 
@@ -150,7 +158,7 @@ export class Editor {
       // grab a handle / the selected object in any mode
       const sel = E.sel; if (sel && sel.n === n) { const h = this.handleAt(p, sel, x, y); if (h) { this.snapPage(d, n); E.drag = { kind: "resize", o: sel, h: h.id, start: { o: this.clone(sel), b: this.bbox(p, sel) }, p }; return; } if (mode === "select" || ["image", "text", "note", "rect", "ellipse"].includes(sel.type)) { const hb = this.bbox(p, sel); const tol = 4 / this.scaleOf(p); if (x >= hb.x - tol && x <= hb.x + hb.w + tol && y >= hb.y - tol && y <= hb.y + hb.h + tol) { this.snapPage(d, n); E.drag = { kind: "move", o: sel, x, y, p }; return; } } }
       if (mode === "select") { const o = this.hit(d, p, x, y); this.selectObj(d, o); if (o) { this.snapPage(d, n); E.drag = { kind: "move", o, x, y, p }; } this.draw(d); return; }
-      if (mode === "edittext") { const ti = this.textHit(d, p, x, y); if (!ti) { const o = this.hit(d, p, x, y); if (o && o.type === "text") { this.selectObj(d, o); this.openText(d, p, o); } else if (!(E.textItems[n] || []).length) toast(t("edit.hint.noText"), 3500); return; } this.snapPage(d, n); const wo = { type: "whiteout", n, x: ti.x - 1, y: ti.y - ti.h * 0.3, w: ti.w + 2, h: ti.h * 1.45 }; const tx = { type: "text", n, x: ti.x, y: ti.y, size: Math.max(6, Math.round(ti.h * 10) / 10), color: "#000000", text: ti.str, bold: false }; this.list(d, n).push(wo, tx); E.textItems[n] = E.textItems[n].filter((i) => i !== ti); this.selectObj(d, tx); this.openText(d, p, tx); return; }
+      if (mode === "edittext") { const ti = this.textHit(d, p, x, y); if (!ti) { const o = this.hit(d, p, x, y); if (o && o.type === "text") { this.selectObj(d, o); this.openText(d, p, o); } else if (!(E.textItems[n] || []).length) { this.ocrDismissed = false; this.checkOcr(d); } return; } this.snapPage(d, n); const wo = { type: "whiteout", n, x: ti.x - 1, y: ti.y - ti.h * 0.3, w: ti.w + 2, h: ti.h * 1.45 }; const tx = { type: "text", n, x: ti.x, y: ti.y, size: Math.max(6, Math.round(ti.h * 10) / 10), color: "#000000", text: ti.str, bold: false }; this.list(d, n).push(wo, tx); E.textItems[n] = E.textItems[n].filter((i) => i !== ti); this.selectObj(d, tx); this.openText(d, p, tx); return; }
       if (mode === "text") { this.snapPage(d, n); const o = { type: "text", n, x, y, size: this.size(), color: this.color(), text: "", bold: this.bold() }; this.list(d, n).push(o); this.selectObj(d, o); this.openText(d, p, o); return; }
       if (mode === "note") { const text = await this.notePrompt(""); if (text == null || !text.trim()) return; this.snapPage(d, n); const o = { type: "note", n, x, y, text }; this.list(d, n).push(o); this.selectObj(d, o); this.draw(d, n); return; }
       if (mode === "image" || mode === "signature") { const pi = this.pendingImage; if (pi) { this.placeImage(d, p, pi, x, y); } else if (mode === "image") this.pickImage(); else this.signatureDialog(); return; }
@@ -172,6 +180,7 @@ export class Editor {
       this.draw(d, p.n);
     };
     ov.onpointerup = (e) => { if (this.crop) return this.cropUp(); const E = d.edits; if (E.drag && E.drag.kind === "box" && (E.drag.o.w < 2 || E.drag.o.h < 2)) { d.edits.objs[p.n] = this.list(d, p.n).filter((o) => o !== E.drag.o); E.undo.pop(); } if (E.drag && ["box", "line", "path"].includes(E.drag.kind)) this.selectObj(d, this.mode === "draw" ? null : E.drag.o); E.drag = null; this.draw(d, p.n); };
+    ov.oncontextmenu = (e) => { e.preventDefault(); const [x, y] = this.toPdf(p, e); const o = this.hit(d, p, x, y); if (o) { this.selectObj(d, o); this.draw(d, p.n); this.app.objectMenu(d, p, o, { x: e.clientX, y: e.clientY }); } else this.app.pageMenu([p.n], { x: e.clientX, y: e.clientY }, { viewer: true }); };
     ov.ondblclick = (e) => { const [x, y] = this.toPdf(p, e); const o = this.hit(d, p, x, y); if (o && o.type === "text") { this.selectObj(d, o); this.openText(d, p, o); } else if (o && o.type === "note") this.notePrompt(o.text).then((v) => { if (v != null) { this.snapPage(d, p.n); o.text = v; } }); };
   }
   notePrompt(value) { return new Promise((resolve) => { const body = modal(t("edit.note"), `<div class="form"><textarea id="noteTa" rows="5" dir="auto">${esc(value)}</textarea><div class="row end"><button class="btn" id="noteCancel">${esc(t("cancel"))}</button><button class="btn btn-primary" id="noteOk">${esc(t("ok"))}</button></div></div>`, { size: "sm", onClose: () => resolve(null) }); const ta = $("#noteTa", body); setTimeout(() => ta.focus(), 30); $("#noteOk", body).onclick = () => { const v = ta.value; closeModal(); resolve(v); }; $("#noteCancel", body).onclick = () => closeModal(); }); }
@@ -206,8 +215,9 @@ export class Editor {
   }
 
   // ---------- visual crop ----------
-  startCrop(d) {
-    if (!d) return; this.commitText(); d.edits.sel = null; const p = d.pages[d.current - 1]; if (!p || !p.ov) return;
+  startCrop(d, pages = null) {
+    if (!d) return; this.commitText(); d.edits.sel = null; this.cropPages = pages; const p = d.pages[d.current - 1]; if (!p || !p.ov) return;
+    const one = $("#cropApply span"); if (one) one.textContent = pages && pages.length > 1 ? t("cropUi.applySel", { n: pages.length }) : t("cropUi.applyOne");
     this.cropPrevZoom = d.zoom; if (d.zoom !== "page") { d.setZoom("page"); } setTimeout(() => d.goTo(p.n), 50); // whole page visible while cropping
     const mb = p.base.page.view; // [x0, y0, x1, y1] in PDF units (crop box or media box)
     this.crop = { n: p.n, x0: mb[0], y0: mb[1], x1: mb[2], y1: mb[3], drag: null }; $("#cropbar").hidden = false; $("#edModes").classList.add("dim"); $("#edHint").textContent = t("cropUi.hint2"); this.draw(d, p.n);
@@ -232,9 +242,9 @@ export class Editor {
   }
   cropUp() { if (this.crop) { const c = this.crop; if (c.drag && c.drag.h === "new" && (c.x1 - c.x0 < 20 || c.y1 - c.y0 < 20)) { const d = this.doc(); const p = d.pages[c.n - 1]; const v = p.base.page.view; Object.assign(c, { x0: v[0], y0: v[1], x1: v[2], y1: v[3] }); this.draw(d, c.n); } c.drag = null; } }
   async applyCrop(all) {
-    const d = this.doc(); const c = this.crop; if (!d || !c) return; const p = d.pages[c.n - 1]; const v = p.base.page.view; const ml = c.x0 - v[0], mr = v[2] - c.x1, mt = v[3] - c.y1, mb = c.y0 - v[1]; this.cancelCrop();
+    const d = this.doc(); const c = this.crop; if (!d || !c) return; const p = d.pages[c.n - 1]; const v = p.base.page.view; const ml = c.x0 - v[0], mr = v[2] - c.x1, mt = v[3] - c.y1, mb = c.y0 - v[1]; const sel = this.cropPages; this.cancelCrop();
     const bytes = this.hasEdits(d) ? await this.flatten(d) : d.bytes; const doc = await loadDoc(bytes);
-    const pages = all ? doc.getPages() : [doc.getPage(c.n - 1)];
+    const pages = all === true ? doc.getPages() : Array.isArray(sel) && sel.length > 1 ? sel.map((n) => doc.getPage(n - 1)) : [doc.getPage(c.n - 1)];
     for (const pg of pages) { const box = pg.getCropBox(); const x0 = box.x + ml, y0 = box.y + mb, x1 = box.x + box.width - mr, y1 = box.y + box.height - mt; if (x1 - x0 < 20 || y1 - y0 < 20) continue; pg.setCropBox(x0, y0, x1 - x0, y1 - y0); }
     await d.replace(await doc.save({ useObjectStreams: false })); this.app.renderTabs(); toast(t("toast.applied"));
   }

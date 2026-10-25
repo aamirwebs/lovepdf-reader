@@ -31,6 +31,25 @@ adminweb → Settings → **Mobile app** → "Windows app download URL":
 ## 4) Nayi version release karna
 `package.json` mein `"version"` barhayen (e.g. 1.0.1) → commit + push → Releases → new release tag `v1.0.1` → Publish. Installed apps ko khud "update available" dikhega.
 
+## 5) v1.2.0 — kya naya hai
+- **Set as default fix**: installer ab Windows ko "LovePDF Reader" naam se register karta hai (`build/installer.nsh`): Settings ▸ Apps ▸ Default apps ki list mein **LovePDF Reader** alag entry, "Open with" mein bhi ab naam dikhta hai (pehle lamba description dikhta tha). App ka "Set as default" button seedha us page par le jata hai — wahan `.pdf` par click karke LovePDF Reader chunein.
+  - Purana v1.1 install hai to **pehle uninstall karein** (Settings ▸ Apps ▸ LovePDF Reader and Editor ▸ Uninstall), phir v1.2.0 install karein — tab hi registry entries sahi banti hain.
+- **Rotate button fix**: dropdown toolbar ke `overflow:hidden` mein chhup jata tha — ab sab menus (Rotate, menubar, right-click) ek alag layer mein khulte hain.
+- **Adobe-style header**: upar menubar (File · Edit · View · Page · Tools · Help, Alt+F / Alt+E…), neeche toolbar; Sign in button; Help ▸ Keyboard shortcuts.
+- **Right-click page menu** (left sidebar thumbnails, aur page par bhi): Insert pages (blank / PDF / images), Extract, Replace, Duplicate, Rotate, Crop, Move, Copy/Save as image, Properties, Delete. Thumbnails mein Ctrl/Shift se multi-select, drag se reorder, Delete key.
+- **Scanned PDF edit**: Edit ▸ Edit text par agar page image hai to neeli bar aati hai — "Make this page editable" (sirf wo page server par OCR hota hai, baqi file waisi rehti hai) ya "Whole document". Phir text par click karke edit.
+- **Ads / promo / limits** sab **adminweb → Windows app** page se (section 6).
+
+## 6) adminweb → Windows app (promo, banners, AdSense, limits, notice)
+Website zip **v3.3.0** install karne ke baad admin sidebar mein naya page **Windows app**:
+- **Status & notice**: Latest version (users ko 'update available' dikhega), Notice text (app ke Home + top bar mein pill).
+- **What to show**: guests / free / paid ke liye on-off; apne promo cards (built-in + apni lines: `Title | Text | link | image | button | icon`); teen sources ka % mix (promo / banners / AdSense).
+- **Banners**: Ads & Banners → New banner → position **win_home / win_side / win_bottom / win_inter** (direct advertisers).
+- **Where & how often**: Home card, sidebar, bottom strip (✕ closable), interstitial har N actions + min minutes + per-day max + skip seconds; pehle N seconds koi ad nahi; rotation interval.
+- **Free edit limits**: guest / free / paid per-day edited-PDF saves (0 = unlimited — launch ke liye sab 0 rakhein, sirf ads) aur limit par kya ho (ad / login / upgrade).
+- **AdSense (default OFF)**: ⚠️ AdSense policy desktop software mein ads allow nahi karti (apps ke liye AdMob hai) — on karne se poora AdSense account risk mein aa sakta hai. Apne promo + direct banners + Pro promo safe hain.
+- Stats isi page par: Windows PCs, opens, impressions/clicks per slot, versions, daily usage.
+
 ## Notes
 - Pehli baar Windows SmartScreen "unknown publisher" dikhayega (More info → Run anyway). Hatane ke liye code-signing certificate chahiye (optional, ~$200–400/saal).
-- Installer `.pdf` ko register karta hai; Windows 10/11 mein user ko Settings → Default apps mein LovePDF chunna hota hai (app ke Settings mein button hai).
+- Installer `.pdf` ko register karta hai; Windows 10/11 mein user ko Settings → Default apps mein LovePDF Reader chunna hota hai (app ke Settings / Help menu mein button hai).

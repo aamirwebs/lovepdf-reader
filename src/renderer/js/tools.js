@@ -1,16 +1,17 @@
 // Page tools (organize, merge, split, watermark, page numbers, crop, rotate, blank page, extract) — all local with pdf-lib —
 // plus online tools (convert, compress, OCR, protect/unlock, translate) that use the LovePDF.me API.
-import { $, $$, el, esc, modal, closeModal, toast, status, loadDoc, PDFLib, openPdf, hexToRgb, parsePages, parseRanges, baseName, stripExt, dirOf, bridge, fmtBytes, confirm } from "./util.js";
+import { $, $$, el, esc, modal, closeModal, toast, status, loadDoc, PDFLib, openPdf, hexToRgb, parsePages, parseRanges, baseName, stripExt, dirOf, bridge, fmtBytes, confirm, prompt, embedImage } from "./util.js";
 import { t } from "./i18n.js";
 import { icon } from "./icons.js";
 
 const API = "https://app.lovepdf.me";
 const MM = 72 / 25.4;
+const uniq = (a) => [...new Set((a || []).map(Number).filter((n) => n >= 1))].sort((x, y) => x - y);
 
 export class Tools {
   constructor(app) { this.app = app; }
   async bytesOf(d) { return this.app.editor.hasEdits(d) ? await this.app.editor.flatten(d) : d.bytes; }
-  async apply(d, bytes, msg = t("toast.applied")) { await d.replace(bytes); this.app.renderTabs(); toast(msg); }
+  async apply(d, bytes, msg = t("toast.applied")) { await d.replace(bytes); this.app.renderTabs(); toast(msg); if (this.app.ads) this.app.ads.action("edit"); }
 
   menu() {
     const items = [
@@ -18,7 +19,7 @@ export class Tools {
       ["rotateAll", "rotcw", t("rotateAll"), "local"], ["blank", "plusfile", t("blankPage"), "local"], ["watermark", "drop", t("watermark"), "local"], ["pageNumbers", "hash", t("pageNumbers"), "local"], ["crop", "crop", t("crop"), "local"],
       ["sign", "sign", t("sign"), "local"], ["image", "image", t("images"), "local"],
       ["compress", "zap", t("compress"), "online"], ["pdf-to-word", "word", "PDF → Word", "online"], ["pdf-to-excel", "excel", "PDF → Excel", "online"], ["pdf-to-powerpoint", "filetext", "PDF → PowerPoint", "online"], ["pdf-to-jpg", "image", "PDF → JPG", "online"],
-      ["ocr-pdf", "search", t("ocr"), "online"], ["protect-pdf", "lock", t("protect"), "online"], ["translate-pdf", "globe", t("translate"), "online"],
+      ["ocr-pdf", "search", t("ocr"), "online"], ["ocr-edit", "edittext", t("ocrUi.menu"), "online"], ["protect-pdf", "lock", t("protect"), "online"], ["translate-pdf", "globe", t("translate"), "online"],
     ];
     const body = modal(t("tools"), `<div class="tools-grid">${items.map(([id, ic, label, kind]) => `<button class="qt" data-tool="${id}">${icon(ic, 24)}<b>${esc(label)}</b><small>${kind === "online" ? "☁ LovePDF.me" : "⚡ offline"}</small></button>`).join("")}</div>`, { size: "lg" });
     $$("[data-tool]", body).forEach((b) => (b.onclick = () => { closeModal(); this.run(b.dataset.tool); }));
@@ -30,6 +31,7 @@ export class Tools {
       if (id === "organize") return this.organize(d); if (id === "merge") return this.merge(d); if (id === "split") return this.split(d); if (id === "extract") return this.extract(d);
       if (id === "rotateAll") return this.rotatePages(d, "all", 90); if (id === "crop") { await this.app.setMode("edit"); this.app.editor.startCrop(d); return; } if (id === "blank") return this.blank(d); if (id === "watermark") return this.watermark(d); if (id === "pageNumbers") return this.pageNumbers(d); if (id === "crop") return this.crop(d);
       if (id === "sign") { await this.app.setMode("edit"); this.app.editor.setMode("signature"); return; } if (id === "image") { await this.app.setMode("edit"); this.app.editor.setMode("image"); return; }
+      if (id === "ocr-edit") return this.ocrEditable(d, "all");
       return this.online(d, id);
     } catch (e) { console.error(e); toast((e && e.message) || t("error"), 4000); }
   }
@@ -77,6 +79,64 @@ export class Tools {
     };
   }
   async extract(d) { const spec = await this.app.ask(t("extract"), "1-3, 5", "pages"); if (spec == null) return; const bytes = await this.bytesOf(d); const src = await loadDoc(bytes); const pages = parsePages(spec, src.getPageCount()); if (!pages.length) return; const L = PDFLib(); const out = await L.PDFDocument.create(); const cp = await out.copyPages(src, pages.map((n) => n - 1)); cp.forEach((p) => out.addPage(p)); await this.app.openBytes(await out.save({ useObjectStreams: false }), stripExt(d.name) + "-extracted.pdf", null, true); }
+  // ---------- page operations (sidebar right-click menu, Page menu) — all local with pdf-lib ----------
+  /** Load the current bytes (with pending edits flattened), run fn(doc, L), save + replace. */
+  async pageOp(d, fn, msg) { const bytes = await this.bytesOf(d); const L = PDFLib(); const doc = await loadDoc(bytes); const r = await fn(doc, L); if (r === false) return; await this.apply(d, await doc.save({ useObjectStreams: false }), msg); }
+  /** ns = 1-based page numbers (array). */
+  async deletePages(d, ns) {
+    ns = uniq(ns); if (!ns.length) return; if (ns.length >= d.numPages) { toast(t("pg.cantDeleteAll")); return; }
+    if (ns.length > 1) { const r = await confirm(t("pg.deleteAsk", { n: ns.length }), "", [t("pg.delete"), t("cancel")]); if (r !== 0) return; }
+    await this.pageOp(d, (doc) => { for (const n of [...ns].sort((a, b) => b - a)) doc.removePage(n - 1); }, t("pg.deleted", { n: ns.length }));
+    d.current = Math.min(d.current, d.numPages); d.goTo(Math.min(ns[0], d.numPages));
+  }
+  async duplicatePages(d, ns) { ns = uniq(ns); if (!ns.length) return; await this.pageOp(d, async (doc) => { const copies = await doc.copyPages(doc, ns.map((n) => n - 1)); const last = ns[ns.length - 1]; copies.forEach((pg, i) => doc.insertPage(last + i, pg)); }); }
+  async rotateSel(d, ns, deg) { ns = uniq(ns); if (!ns.length) return; await this.pageOp(d, (doc, L) => { for (const n of ns) { const p = doc.getPage(n - 1); p.setRotation(L.degrees(((p.getRotation().angle + deg) % 360 + 360) % 360)); } }); }
+  /** Move pages `ns` so that they start at 1-based position `to` (position counted in the document without them). */
+  async movePages(d, ns, to) {
+    ns = uniq(ns); if (!ns.length) return; const total = d.numPages; const rest = []; for (let i = 1; i <= total; i++) if (!ns.includes(i)) rest.push(i);
+    const at = Math.max(0, Math.min(rest.length, to - 1)); const order = [...rest.slice(0, at), ...ns, ...rest.slice(at)]; if (order.every((n, i) => n === i + 1)) return;
+    const bytes = await this.bytesOf(d); const out = await this.build([{ bytes }], order.map((n) => ({ n, rot: 0, src: 0 }))); await this.apply(d, out, t("pg.moved"));
+  }
+  async insertBlankAt(d, idx) { await this.pageOp(d, (doc) => { const ref = doc.getPage(Math.max(0, Math.min(doc.getPageCount() - 1, idx - (idx >= doc.getPageCount() ? 1 : 0)))); const sz = ref.getSize(); doc.insertPage(Math.max(0, Math.min(doc.getPageCount(), idx)), [sz.width, sz.height]); }, t("pg.inserted")); }
+  async insertPdfAt(d, idx) { const files = await this.app.pickFiles(true); if (!files.length) return; await this.pageOp(d, async (doc) => { let at = Math.max(0, Math.min(doc.getPageCount(), idx)); for (const f of files) { const src = await loadDoc(f.bytes); const pages = await doc.copyPages(src, src.getPageIndices()); for (const pg of pages) doc.insertPage(at++, pg); } }, t("pg.inserted")); }
+  async insertImagesAt(d, idx) {
+    const b = bridge(); let items = [];
+    if (b && b.openImageDialog) { const paths = await b.openImageDialog(true); for (const p of paths || []) items.push({ bytes: new Uint8Array(await b.readFile(p)), mime: /\.png$/i.test(p) ? "image/png" : /\.webp$/i.test(p) ? "image/webp" : /\.jpe?g$/i.test(p) ? "image/jpeg" : "image/png" }); }
+    else { items = await new Promise((resolve) => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.multiple = true; inp.onchange = async () => { const out = []; for (const f of inp.files) out.push({ bytes: new Uint8Array(await f.arrayBuffer()), mime: f.type }); resolve(out); }; inp.click(); }); }
+    if (!items.length) return;
+    await this.pageOp(d, async (doc) => { let at = Math.max(0, Math.min(doc.getPageCount(), idx)); const ref = doc.getPage(0).getSize(); for (const it of items) { const img = await embedImage(doc, it.bytes, it.mime); const pg = doc.insertPage(at++, [ref.width, ref.height]); const s = Math.min((ref.width - 40) / img.width, (ref.height - 40) / img.height); const w = img.width * s, h = img.height * s; pg.drawImage(img, { x: (ref.width - w) / 2, y: (ref.height - h) / 2, width: w, height: h }); } }, t("pg.inserted"));
+  }
+  async replacePage(d, n) {
+    const files = await this.app.pickFiles(false); if (!files.length) return; const src = await loadDoc(files[0].bytes); let which = 1;
+    if (src.getPageCount() > 1) { const v = await prompt(t("pg.replace"), { label: t("pg.replaceWhich", { name: files[0].name, n: src.getPageCount() }), value: "1" }); if (v == null) return; which = Math.max(1, Math.min(src.getPageCount(), parseInt(v, 10) || 1)); }
+    await this.pageOp(d, async (doc) => { const [pg] = await doc.copyPages(src, [which - 1]); doc.removePage(n - 1); doc.insertPage(n - 1, pg); }, t("pg.replaced"));
+  }
+  async extractSel(d, ns, mode = "tab") {
+    ns = uniq(ns); if (!ns.length) return; const bytes = await this.bytesOf(d); const src = await loadDoc(bytes); const L = PDFLib(); const out = await L.PDFDocument.create(); const cp = await out.copyPages(src, ns.map((n) => n - 1)); cp.forEach((p) => out.addPage(p)); const ob = await out.save({ useObjectStreams: false });
+    const name = stripExt(d.name) + (ns.length === 1 ? `-page${ns[0]}.pdf` : "-pages.pdf");
+    if (mode === "file") return this.app.saveBytesAs(ob, name); return this.app.openBytes(ob, name, null, true);
+  }
+  async copyPageImage(d, n) { const p = d.pages[n - 1]; if (!p) return; const vp = p.base.page.getViewport({ scale: 2, rotation: p.base.page.rotate }); const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; await p.base.page.render({ canvasContext: c.getContext("2d", { alpha: false }), viewport: vp }).promise; const blob = await new Promise((r) => c.toBlob(r, "image/png")); try { await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]); toast(t("toast.copied")); } catch { const path = await this.app.saveBytesAs(new Uint8Array(await blob.arrayBuffer()), stripExt(d.name) + `-page${n}.png`, "png"); if (path) toast(t("savedTo", { path })); } }
+  async savePageImage(d, n) { const p = d.pages[n - 1]; if (!p) return; const vp = p.base.page.getViewport({ scale: 2, rotation: p.base.page.rotate }); const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; await p.base.page.render({ canvasContext: c.getContext("2d", { alpha: false }), viewport: vp }).promise; const blob = await new Promise((r) => c.toBlob(r, "image/png")); await this.app.saveBytesAs(new Uint8Array(await blob.arrayBuffer()), stripExt(d.name) + `-page${n}.png`, "png"); }
+  async pageSizeDialog(d, n) { const p = d.pages[n - 1]; const mm = (v) => (v / 72 * 25.4).toFixed(1); const w = p.base.w, h = p.base.h; const names = [["A4", 595.28, 841.89], ["Letter", 612, 792], ["Legal", 612, 1008], ["A3", 841.89, 1190.55], ["A5", 419.53, 595.28]]; const nm = names.find(([, a, b]) => (Math.abs(a - w) < 2 && Math.abs(b - h) < 2) || (Math.abs(b - w) < 2 && Math.abs(a - h) < 2)); modal(t("pg.props"), `<div class="form"><p>${esc(t("page"))} ${n} / ${d.numPages}</p><p>${esc(t("pg.size"))}: <b>${mm(w)} × ${mm(h)} mm</b> (${(w / 72).toFixed(2)} × ${(h / 72).toFixed(2)} in)${nm ? ` · ${nm[0]}${w > h ? " landscape" : ""}` : ""}</p><p>${esc(t("rotate"))}: ${p.base.page.rotate}°</p><p>${esc(t("file"))}: ${esc(d.name)} · ${fmtBytes(d.bytes.length)}</p></div>`, { size: "sm" }); }
+  /** OCR the current page (or the whole file) on LovePDF.me and put the recognised text back into THIS document, then re-enter Edit text. */
+  async ocrEditable(d, scope = "page") {
+    const n = d.current; const pageOnly = scope === "page" && d.numPages > 1;
+    const src = await this.bytesOf(d); let inBytes = src;
+    if (pageOnly) { const doc = await loadDoc(src); const L = PDFLib(); const out = await L.PDFDocument.create(); const [pg] = await out.copyPages(doc, [n - 1]); out.addPage(pg); inBytes = await out.save({ useObjectStreams: false }); }
+    const body = modal(t("ocrUi.title2"), `<div class="form"><p class="hint">☁ ${esc(t("online.needNet"))}<br>🔒 ${esc(t("online.privacy"))}</p><label>OCR language<select id="olLang"><option value="eng">English</option><option value="urd">Urdu</option><option value="ara">Arabic</option><option value="eng+urd">English + Urdu</option><option value="eng+ara">English + Arabic</option><option value="hin">Hindi</option></select></label><div class="prog" id="olProg" hidden><i style="width:0"></i></div><p class="hint" id="olMsg">${pageOnly ? esc(t("ocrUi.scopePage", { n })) : esc(t("ocrUi.scopeAll", { n: d.numPages }))}</p><div class="row end"><button class="btn" id="olCancel">${esc(t("cancel"))}</button><button class="btn btn-primary" id="olGo">${esc(t("ocrUi.go"))}</button></div></div>`, { size: "sm" });
+    $("#olLang", body).value = this.app.settings.ocrLang || (this.app.settings.lang === "ur" ? "eng+urd" : "eng"); $("#olCancel", body).onclick = closeModal;
+    $("#olGo", body).onclick = async () => {
+      const lang = $("#olLang", body).value; this.app.saveSettings({ ocrLang: lang }); const btn = $("#olGo", body); btn.disabled = true; const prog = $("#olProg", body), bar = prog.querySelector("i"), msg = $("#olMsg", body); prog.hidden = false;
+      try {
+        const r = await this.apiJob("ocr-pdf", inBytes, stripExt(d.name) + ".pdf", { lang }, (pct, m) => { bar.style.width = pct + "%"; msg.textContent = m; });
+        let outBytes = r.bytes;
+        if (pageOnly) { const doc = await loadDoc(src); const ocrDoc = await loadDoc(r.bytes); const [pg] = await doc.copyPages(ocrDoc, [0]); doc.removePage(n - 1); doc.insertPage(n - 1, pg); outBytes = await doc.save({ useObjectStreams: false }); }
+        closeModal(); await d.replace(outBytes); this.app.renderTabs(); d.goTo(n); toast(t("ocrUi.done")); this.app.ads && this.app.ads.event("tool", { slot: "ocr" });
+        await this.app.setMode("edit"); this.app.editor.setMode("edittext"); this.app.editor.hideOcrBar();
+      } catch (e) { msg.textContent = (e.message || t("error")); btn.disabled = false; if (e.extra && e.extra.upgrade && !this.app.account) msg.textContent = t("online.limit"); }
+    };
+  }
   async rotatePages(d, which, deg = 90) { const bytes = await this.bytesOf(d); const L = PDFLib(); const doc = await loadDoc(bytes); const pages = which === "all" ? doc.getPages() : [doc.getPage(Math.max(0, d.current - 1))]; for (const p of pages) p.setRotation(L.degrees(((p.getRotation().angle + deg) % 360 + 360) % 360)); await this.apply(d, await doc.save({ useObjectStreams: false })); }
   async blank(d) { const bytes = await this.bytesOf(d); const doc = await loadDoc(bytes); const idx = Math.min(doc.getPageCount(), d.current); const sz = doc.getPage(Math.max(0, idx - 1)).getSize(); doc.insertPage(idx, [sz.width, sz.height]); await this.apply(d, await doc.save({ useObjectStreams: false })); }
   // ---------- watermark ----------
@@ -105,7 +165,7 @@ export class Tools {
       try {
         const bytes = await this.bytesOf(d); const name = d.name.replace(/\.pdf$/i, "") + ".pdf";
         const r = await this.apiJob(cfg.slug, bytes, name, options, (pct, m) => { bar.style.width = pct + "%"; msg.textContent = m; });
-        const outName = (r.output_name || stripExt(name) + "." + cfg.out); closeModal();
+        const outName = (r.output_name || stripExt(name) + "." + cfg.out); closeModal(); if (this.app.ads) this.app.ads.action("tool", { slot: cfg.slug });
         if (cfg.out === "pdf") await this.app.openBytes(r.bytes, outName, null, true); else { const path = await this.app.saveBytesAs(r.bytes, outName, cfg.out); if (path) toast(t("online.saved", { path })); }
       } catch (e) { msg.textContent = e.message || t("error"); btn.disabled = false; if (e.extra && e.extra.upgrade && !this.app.account) msg.textContent = t("online.limit"); }
     };

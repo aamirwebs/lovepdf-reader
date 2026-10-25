@@ -2,48 +2,60 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' app: blob: data:; script-src 'self' app: blob: 'wasm-unsafe-eval'; style-src 'self' app: 'unsafe-inline'; img-src 'self' app: blob: data: https:; connect-src 'self' app: blob: data: https://app.lovepdf.me https://www.lovepdf.me https://lovepdf.me; font-src 'self' app: data:; worker-src 'self' app: blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' app: blob: data:; script-src 'self' app: blob: 'wasm-unsafe-eval'; style-src 'self' app: 'unsafe-inline'; img-src 'self' app: blob: data: https:; connect-src 'self' app: blob: data: https://app.lovepdf.me https://www.lovepdf.me https://lovepdf.me; frame-src https://www.lovepdf.me https://lovepdf.me https://app.lovepdf.me; font-src 'self' app: data:; worker-src 'self' app: blob:;">
 <title>LovePDF Reader and Editor</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 <div id="app">
-  <header id="topbar">
-    <div class="tb-group">
-      <button class="tb" id="btnHome" data-ic="home" title="Home"></button>
-      <button class="tb tb-text" id="btnOpen" data-ic="folder" title="Ctrl+O"><span data-t="open">Open</span></button>
-      <button class="tb tb-text" id="btnSave" data-ic="save" title="Ctrl+S" disabled><span data-t="save">Save</span></button>
-      <button class="tb" id="btnPrint" data-ic="printer" title="Ctrl+P" disabled></button>
+  <header id="chrome">
+    <!-- row 1: brand + menubar (Acrobat-style) -->
+    <div id="menubar">
+      <div class="brand" id="brand" title="LovePDF Reader and Editor"><img src="icon.png" alt="" width="22" height="22"><b>LovePDF</b><span data-t="brand.reader">Reader</span></div>
+      <nav class="mb" id="mainMenu">
+        <button class="mb-item" data-menu="file" data-t="menu.file">File</button>
+        <button class="mb-item" data-menu="edit" data-t="menu.edit">Edit</button>
+        <button class="mb-item" data-menu="view" data-t="menu.view">View</button>
+        <button class="mb-item" data-menu="page" data-t="menu.page">Page</button>
+        <button class="mb-item" data-menu="tools" data-t="menu.tools">Tools</button>
+        <button class="mb-item" data-menu="help" data-t="menu.help">Help</button>
+      </nav>
+      <span class="sp"></span>
+      <div id="mbNotice" class="mb-notice" hidden></div>
+      <button class="mb-user" id="btnAccount" data-ic="user"><span id="accountName" data-t="online.login">Sign in</span></button>
+      <button class="tb tb-sm" id="btnSettings" data-ic="settings" title="Settings"></button>
     </div>
-    <div class="tb-group doc-only">
-      <span class="sep"></span>
-      <button class="tb" id="btnSidebar" data-ic="sidebar" title="F4"></button>
-      <button class="tb" id="pgPrev" data-ic="left" title="Previous page"></button>
-      <input id="pgNum" type="text" inputmode="numeric" value="1" aria-label="Page"><span class="muted">/ <span id="pgTotal">0</span></span>
-      <button class="tb" id="pgNext" data-ic="right" title="Next page"></button>
-      <span class="sep"></span>
-      <button class="tb" id="zoomOut" data-ic="minus" title="Ctrl+-"></button>
-      <select id="zoomSel" aria-label="Zoom"><option value="width">Fit width</option><option value="page">Fit page</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option><option value="4">400%</option></select>
-      <button class="tb" id="zoomIn" data-ic="plus" title="Ctrl+="></button>
-      <span class="sep"></span>
-      <div class="dd"><button class="tb tb-text" id="btnRotateMenu" data-ic="rotcw"><span data-t="rotate">Rotate</span> ▾</button><div class="dd-menu" id="rotateMenu" hidden>
-        <button data-rot="view" data-ic="eye"><span data-t="rot.view">Rotate view only</span></button>
-        <button data-rot="cw" data-ic="rotcw"><span data-t="rot.cw">Rotate this page ↻</span></button>
-        <button data-rot="ccw" data-ic="rotccw"><span data-t="rot.ccw">Rotate this page ↺</span></button>
-        <button data-rot="all" data-ic="layers"><span data-t="rot.all">Rotate all pages ↻</span></button></div></div>
-      <button class="tb tb-text" id="btnCrop" data-ic="crop"><span data-t="crop">Crop</span></button>
-      <button class="tb" id="btnFind" data-ic="search" title="Ctrl+F"></button>
-    </div>
-    <div class="tb-group doc-only">
-      <div class="seg" id="modeSeg"><button id="modeView" class="on" data-ic="eye"><span data-t="viewMode">View</span></button><button id="modeEdit" data-ic="edit"><span data-t="editMode">Edit</span></button></div>
-      <button class="tb tb-text" id="btnPages" data-ic="grid"><span data-t="pages">Pages</span></button>
-      <button class="tb tb-text" id="btnTools" data-ic="tools"><span data-t="tools">Tools</span></button>
-    </div>
-    <div class="tb-group tb-end">
-      <button class="tb" id="btnSettings" data-ic="settings" title="Settings"></button>
+    <div id="tabs" hidden></div>
+    <!-- row 2: toolbar -->
+    <div id="topbar">
+      <div class="tb-group tb-left">
+        <button class="tb" id="btnHome" data-ic="home" title="Home"></button>
+        <button class="tb tb-text" id="btnOpen" data-ic="folder" title="Ctrl+O"><span data-t="open">Open</span></button>
+        <button class="tb tb-text" id="btnSave" data-ic="save" title="Ctrl+S" disabled><span data-t="save">Save</span></button>
+        <button class="tb" id="btnPrint" data-ic="printer" title="Ctrl+P" disabled></button>
+        <span class="sep doc-only"></span>
+        <button class="tb doc-only" id="btnSidebar" data-ic="sidebar" title="F4"></button>
+      </div>
+      <div class="tb-group tb-center doc-only">
+        <button class="tb" id="pgPrev" data-ic="up" title="Previous page"></button>
+        <input id="pgNum" type="text" inputmode="numeric" value="1" aria-label="Page"><span class="muted pg-of">/ <span id="pgTotal">0</span></span>
+        <button class="tb" id="pgNext" data-ic="down" title="Next page"></button>
+        <span class="sep"></span>
+        <button class="tb" id="zoomOut" data-ic="minus" title="Ctrl+-"></button>
+        <select id="zoomSel" aria-label="Zoom"><option value="width">Fit width</option><option value="page">Fit page</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option><option value="4">400%</option></select>
+        <button class="tb" id="zoomIn" data-ic="plus" title="Ctrl+="></button>
+        <span class="sep"></span>
+        <button class="tb tb-text" id="btnRotateMenu" data-ic="rotcw"><span data-t="rotate">Rotate</span><i class="caret"></i></button>
+        <button class="tb tb-text" id="btnCrop" data-ic="crop"><span data-t="crop">Crop</span></button>
+        <button class="tb" id="btnFind" data-ic="search" title="Ctrl+F"></button>
+      </div>
+      <div class="tb-group tb-right doc-only">
+        <div class="seg" id="modeSeg"><button id="modeView" class="on" data-ic="eye"><span data-t="viewMode">View</span></button><button id="modeEdit" data-ic="edit"><span data-t="editMode">Edit</span></button></div>
+        <button class="tb tb-text" id="btnPages" data-ic="grid"><span data-t="pages">Pages</span></button>
+        <button class="tb tb-text tb-accent" id="btnTools" data-ic="tools"><span data-t="tools">Tools</span></button>
+      </div>
     </div>
   </header>
-  <div id="tabs" hidden></div>
   <div id="editbar" hidden>
     <div class="ed-modes" id="edModes"></div>
     <span class="sep"></span>
@@ -54,6 +66,12 @@
     <button class="tb" id="edUndo" data-ic="undo" title="Ctrl+Z"></button><button class="tb" id="edRedo" data-ic="redo" title="Ctrl+Y"></button><button class="tb" id="edDel" data-ic="trash" title="Delete"></button>
     <span class="ed-hint" id="edHint"></span>
     <input type="file" id="edImgInput" accept="image/*" hidden>
+  </div>
+  <div id="ocrbar" hidden>
+    <span class="ocr-ic">🔍</span><div class="ocr-txt"><b data-t="ocrUi.title">This page is a scanned image — there is no text to edit yet.</b><small data-t="ocrUi.body">Run OCR (text recognition) to make the words editable and searchable. It runs on LovePDF.me servers and takes a few seconds.</small></div><span class="sp"></span>
+    <button class="btn btn-sm btn-primary" id="ocrPage" data-ic="zap"><span data-t="ocrUi.page">Make this page editable</span></button>
+    <button class="btn btn-sm" id="ocrAll" data-ic="layers"><span data-t="ocrUi.all">Whole document</span></button>
+    <button class="btn btn-sm btn-ghost" id="ocrClose" data-ic="x"><span data-t="ocrUi.skip">Edit over the image</span></button>
   </div>
   <div id="cropbar" hidden>
     <b data-t="cropUi.title">Crop pages</b><span class="muted" id="cropInfo"></span><span class="sp"></span>
@@ -68,6 +86,7 @@
   </div>
   <main id="main">
     <section id="home">
+      <div id="homeNotice" class="home-notice" hidden></div>
       <div class="home-hero">
         <img src="icon.png" alt="" width="72" height="72">
         <div><h1 data-t="appName">LovePDF Reader and Editor</h1><p class="muted"><span data-t="dropHint">Drag &amp; drop PDF files anywhere in this window</span> · <span data-t="orClick">or click Open PDF</span></p></div>
@@ -81,19 +100,22 @@
         <div class="home-col">
           <h2 data-t="quickTools">Quick tools</h2>
           <div id="homeTools" class="qt-grid"></div>
+          <div id="homeAd" class="ad-slot ad-home" hidden></div>
         </div>
       </div>
       <p class="home-foot muted">⚡ <span data-t="set.about1"></span> · <a href="#" data-ext="https://www.lovepdf.me/?utm_source=windows-app">www.lovepdf.me</a></p>
     </section>
     <section id="docArea" hidden>
       <aside id="sidebar" hidden>
-        <div class="sb-tabs"><button class="on" data-sb="thumbs" data-t="thumbnails">Pages</button><button data-sb="outline" data-t="outline">Bookmarks</button></div>
-        <div id="sbThumbs" class="sb-pane"></div>
+        <div class="sb-tabs"><button class="on" data-sb="thumbs" data-t="thumbnails">Pages</button><button data-sb="outline" data-t="outline">Bookmarks</button><span class="sp"></span><button class="tb tb-sm" id="sbMenu" data-ic="menu" title="Page options"></button></div>
+        <div id="sbThumbs" class="sb-pane" tabindex="0"></div>
         <div id="sbOutline" class="sb-pane" hidden></div>
+        <div id="sbAd" class="ad-slot ad-side" hidden></div>
       </aside>
       <div id="viewport" tabindex="0"><div id="pagesWrap"></div></div>
     </section>
   </main>
+  <div id="adBottom" class="ad-slot ad-bottom" hidden></div>
   <footer id="status"><span id="statusMsg"></span><span class="sp"></span><span id="statusRight" class="muted"></span></footer>
   <div id="modal" hidden><div class="modal-box"><div class="modal-head"><b id="modalTitle"></b><span class="sp"></span><button class="tb" id="modalClose" data-ic="x"></button></div><div id="modalBody"></div></div></div>
   <div id="toast" hidden></div>

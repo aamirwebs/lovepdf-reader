@@ -57,8 +57,9 @@ function createWindow() {
   buildMenu();
 }
 function send(ch, data) { if (win && !win.isDestroyed()) win.webContents.send(ch, data); }
-function openPaths(paths) { const pdfs = paths.filter((p) => /\.pdf$/i.test(p) && fs.existsSync(p)); if (!pdfs.length) return; if (win && win.webContents && !win.webContents.isLoading()) { send("open-files", pdfs); if (win.isMinimized()) win.restore(); win.focus(); } else pendingFiles.push(...pdfs); }
+function openPaths(paths, print = false) { const pdfs = paths.filter((p) => /\.pdf$/i.test(p) && fs.existsSync(p)); if (!pdfs.length) return; if (print) pdfs.print = true; if (win && win.webContents && !win.webContents.isLoading()) { send("open-files", pdfs); if (print) send("menu", { cmd: "print", arg: pdfs[0] }); if (win.isMinimized()) win.restore(); win.focus(); } else pendingFiles.push(...pdfs); }
 const argvFiles = (argv) => argv.slice(1).filter((a) => /\.pdf$/i.test(a) && !a.startsWith("--"));
+const wantsPrint = (argv) => argv.includes("--print");
 
 // ---------- menu (keyboard shortcuts; the bar itself stays hidden) ----------
 function buildMenu() {
@@ -92,7 +93,7 @@ function checkUpdates(manual = false) {
 
 // ---------- IPC ----------
 ipcMain.handle("dialog:open", async (e, { multi = true } = {}) => { const r = await dialog.showOpenDialog(win, { title: "Open PDF", filters: [{ name: "PDF files", extensions: ["pdf"] }], properties: multi ? ["openFile", "multiSelections"] : ["openFile"] }); return r.canceled ? [] : r.filePaths; });
-ipcMain.handle("dialog:openImages", async () => { const r = await dialog.showOpenDialog(win, { title: "Choose image", filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }], properties: ["openFile"] }); return r.canceled ? [] : r.filePaths; });
+ipcMain.handle("dialog:openImages", async (e, { multi = false } = {}) => { const r = await dialog.showOpenDialog(win, { title: multi ? "Choose images" : "Choose image", filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }], properties: multi ? ["openFile", "multiSelections"] : ["openFile"] }); return r.canceled ? [] : r.filePaths; });
 ipcMain.handle("dialog:saveAs", async (e, { defaultName = "document.pdf", filters } = {}) => { const r = await dialog.showSaveDialog(win, { title: "Save PDF", defaultPath: path.join(loadSettings().lastDir || app.getPath("documents"), defaultName), filters: filters || [{ name: "PDF", extensions: ["pdf"] }] }); if (r.canceled || !r.filePath) return null; saveSettings({ lastDir: path.dirname(r.filePath) }); return r.filePath; });
 ipcMain.handle("dialog:folder", async () => { const r = await dialog.showOpenDialog(win, { title: "Choose folder", properties: ["openDirectory", "createDirectory"] }); return r.canceled ? null : r.filePaths[0]; });
 ipcMain.handle("dialog:confirm", async (e, { message, detail = "", buttons = ["OK", "Cancel"] }) => { const r = await dialog.showMessageBox(win, { type: "question", message, detail, buttons, defaultId: 0, cancelId: buttons.length - 1 }); return r.response; });
@@ -106,12 +107,23 @@ ipcMain.handle("recent:get", () => (loadSettings().recent || []).filter((r) => {
 ipcMain.handle("recent:clear", () => { saveSettings({ recent: [] }); app.clearRecentDocuments(); return true; });
 ipcMain.handle("settings:get", () => { const { recent, bounds, lastDir, ...rest } = loadSettings(); return rest; });
 ipcMain.handle("settings:set", (e, obj) => { saveSettings(obj); if (obj.theme) nativeTheme.themeSource = obj.theme === "system" ? "system" : obj.theme; return true; });
-ipcMain.handle("app:info", () => ({ version: app.getVersion(), platform: process.platform, packaged: app.isPackaged, electron: process.versions.electron, chrome: process.versions.chrome, userData: app.getPath("userData") }));
+ipcMain.handle("app:info", () => ({ version: app.getVersion(), platform: process.platform, packaged: app.isPackaged, electron: process.versions.electron, chrome: process.versions.chrome, userData: app.getPath("userData"), os: `${require("node:os").type()} ${require("node:os").release()}`, locale: app.getLocale(), arch: process.arch }));
+ipcMain.handle("app:quit", () => { app.quit(); return true; });
+ipcMain.handle("window:fullscreen", (e, v) => { if (!win) return false; win.setFullScreen(v == null ? !win.isFullScreen() : !!v); return win.isFullScreen(); });
+ipcMain.handle("window:devtools", () => { if (win) win.webContents.toggleDevTools(); return true; });
+ipcMain.handle("window:zoomFactor", (e, f) => { if (win && f) win.webContents.setZoomFactor(Math.max(0.6, Math.min(2, +f))); return win ? win.webContents.getZoomFactor() : 1; });
 ipcMain.handle("app:openExternal", (e, url) => { if (/^(https?|mailto):/.test(url)) shell.openExternal(url); return true; });
 ipcMain.handle("app:isFirstRun", () => { const s = loadSettings(); if (s.firstRunDone) return false; saveSettings({ firstRunDone: true }); return true; });
 ipcMain.handle("app:setDefault", async () => {
   // Windows 10/11 only let the user pick the default app in Settings; the installer already registered .pdf for us.
-  if (isWin) { await shell.openExternal("ms-settings:defaultapps?registeredAppUser=LovePDF Reader and Editor").catch(() => shell.openExternal("ms-settings:defaultapps")); return "settings"; }
+  // The installer registers "LovePDF Reader" under HKCU/HKLM\Software\RegisteredApplications (build/installer.nsh),
+  // so this deep link opens Settings ▸ Default apps ▸ LovePDF Reader directly. Per-machine installs use the other key.
+  if (isWin) {
+    const perMachine = /^[A-Za-z]:\\Program Files/i.test(process.execPath);
+    const url = `ms-settings:defaultapps?${perMachine ? "registeredAppMachine" : "registeredAppUser"}=LovePDF Reader`;
+    try { await shell.openExternal(url); } catch { try { await shell.openExternal("ms-settings:defaultapps"); } catch {} }
+    return "settings";
+  }
   return "unsupported";
 });
 ipcMain.handle("app:print", async (e, opts = {}) => new Promise((resolve) => { if (!win) return resolve(false); win.webContents.print({ silent: false, printBackground: true, ...opts }, (ok, reason) => resolve(ok ? true : reason || false)); }));
@@ -131,11 +143,11 @@ ipcMain.handle("window:setDocumentEdited", (e, v) => { if (win) win.setDocumentE
 // ---------- lifecycle ----------
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) { app.quit(); } else {
-  app.on("second-instance", (e, argv) => { openPaths(argvFiles(argv)); if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+  app.on("second-instance", (e, argv) => { openPaths(argvFiles(argv), wantsPrint(argv)); if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.on("open-file", (e, p) => { e.preventDefault(); openPaths([p]); });
   app.whenReady().then(() => {
     const s = loadSettings(); if (s.theme && s.theme !== "system") nativeTheme.themeSource = s.theme;
-    registerProtocol(); createWindow(); openPaths(argvFiles(process.argv));
+    registerProtocol(); createWindow(); openPaths(argvFiles(process.argv), wantsPrint(process.argv));
     setTimeout(() => checkUpdates(false), 8000);
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });

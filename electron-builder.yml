@@ -22,9 +22,11 @@ win:
   fileAssociations:
     - ext: pdf
       name: PDF Document
-      description: PDF Document (LovePDF Reader)
+      description: PDF Document
       icon: build/icon.ico
       role: Editor
+  # legalTrademarks / FileDescription come from package.json "description" (kept short on purpose:
+  # Windows shows it as the app name in "Open with")
 nsis:
   oneClick: false
   perMachine: false
@@ -38,6 +40,7 @@ nsis:
   uninstallerIcon: build/icon.ico
   installerHeaderIcon: build/icon.ico
   license: LICENSE.txt
+  include: build/installer.nsh
   deleteAppDataOnUninstall: false
   artifactName: LovePDF-Reader-Setup.${ext}
 publish:
