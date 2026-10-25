@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld("lovepdf", {
   exists: (p) => inv("file:exists", p), stat: (p) => inv("file:stat", p), showInFolder: (p) => inv("file:showInFolder", p), openPath: (p) => inv("file:openPath", p),
   recent: () => inv("recent:get"), clearRecent: () => inv("recent:clear"),
   getSettings: () => inv("settings:get"), setSettings: (o) => inv("settings:set", o),
-  info: () => inv("app:info"), openExternal: (u) => inv("app:openExternal", u), setDefault: () => inv("app:setDefault"),
+  info: () => inv("app:info"), openExternal: (u) => inv("app:openExternal", u), setDefault: () => inv("app:setDefault"), isFirstRun: () => inv("app:isFirstRun"),
   print: (o) => inv("app:print", o), printToPdf: (o) => inv("app:printToPdf", o),
   checkUpdates: () => inv("update:check"), downloadUpdate: () => inv("update:download"), installUpdate: () => inv("update:install"),
   setTitle: (t) => inv("window:title", t), setEdited: (v) => inv("window:setDocumentEdited", v),

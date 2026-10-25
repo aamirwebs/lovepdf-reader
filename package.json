@@ -1,7 +1,7 @@
 {
   "name": "lovepdf-reader",
   "productName": "LovePDF Reader and Editor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Fast, free PDF reader and editor for Windows by LovePDF.me — read, annotate, edit, organize, merge and convert PDFs.",
   "main": "src/main/main.js",
   "author": "LovePDF.me <support@lovepdf.me>",

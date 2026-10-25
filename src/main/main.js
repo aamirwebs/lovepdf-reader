@@ -26,6 +26,7 @@ function addRecent(p) {
 }
 
 // ---------- custom scheme (ES modules + workers + fetch work reliably, unlike file://) ----------
+app.commandLine.appendSwitch("disable-quic"); app.commandLine.appendSwitch("disable-http2");
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
 function registerProtocol() {
   protocol.handle("app", (req) => {
@@ -107,6 +108,7 @@ ipcMain.handle("settings:get", () => { const { recent, bounds, lastDir, ...rest 
 ipcMain.handle("settings:set", (e, obj) => { saveSettings(obj); if (obj.theme) nativeTheme.themeSource = obj.theme === "system" ? "system" : obj.theme; return true; });
 ipcMain.handle("app:info", () => ({ version: app.getVersion(), platform: process.platform, packaged: app.isPackaged, electron: process.versions.electron, chrome: process.versions.chrome, userData: app.getPath("userData") }));
 ipcMain.handle("app:openExternal", (e, url) => { if (/^(https?|mailto):/.test(url)) shell.openExternal(url); return true; });
+ipcMain.handle("app:isFirstRun", () => { const s = loadSettings(); if (s.firstRunDone) return false; saveSettings({ firstRunDone: true }); return true; });
 ipcMain.handle("app:setDefault", async () => {
   // Windows 10/11 only let the user pick the default app in Settings; the installer already registered .pdf for us.
   if (isWin) { await shell.openExternal("ms-settings:defaultapps?registeredAppUser=LovePDF Reader and Editor").catch(() => shell.openExternal("ms-settings:defaultapps")); return "settings"; }
@@ -116,8 +118,9 @@ ipcMain.handle("app:print", async (e, opts = {}) => new Promise((resolve) => { i
 ipcMain.handle("app:printToPdf", async (e, opts = {}) => { if (!win) return null; const data = await win.webContents.printToPDF({ printBackground: true, ...opts }); return data; });
 ipcMain.handle("net:fetch", async (e, { url, method = "GET", headers = {}, body = null }) => {
   if (!/^https:\/\//i.test(String(url))) throw new Error("Only https URLs are allowed");
-  const r = await net.fetch(url, { method, headers, body: body ? Buffer.from(body) : undefined });
-  const buf = Buffer.from(await r.arrayBuffer()); return { ok: r.ok, status: r.status, headers: Object.fromEntries(r.headers.entries()), body: buf };
+  // Node's fetch (undici) — avoids Chromium network-stack issues such as ERR_QUIC_PROTOCOL_ERROR behind Cloudflare.
+  const doFetch = async (impl) => { const r = await impl(url, { method, headers, body: body ? Buffer.from(body) : undefined, redirect: "follow" }); const buf = Buffer.from(await r.arrayBuffer()); return { ok: r.ok, status: r.status, headers: Object.fromEntries(r.headers.entries()), body: buf }; };
+  try { return await doFetch(globalThis.fetch); } catch (e1) { try { return await doFetch(net.fetch); } catch (e2) { throw new Error((e1 && e1.cause && e1.cause.message) || e1.message || String(e2)); } }
 });
 ipcMain.handle("update:check", () => { checkUpdates(true); return true; });
 ipcMain.handle("update:download", () => { if (updater) updater.downloadUpdate().catch((err) => send("update", { state: "error", error: err.message })); return true; });

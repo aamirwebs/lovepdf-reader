@@ -4,6 +4,7 @@ import { t, setLang, langs } from "./i18n.js";
 import { Doc } from "./viewer.js";
 import { Editor } from "./editor.js";
 import { Tools } from "./tools.js";
+import { icon } from "./icons.js";
 
 const API = "https://app.lovepdf.me";
 class App {
@@ -17,8 +18,10 @@ class App {
     else { try { Object.assign(this.settings, JSON.parse(localStorage.getItem("lp_settings") || "{}")); } catch {} }
     this.token = this.settings.token || null; this.account = this.settings.account || null;
     this.applyTheme(); setLang(this.settings.lang || "en"); this.applyStrings();
+    $$("[data-ic]").forEach((e) => { if (!e.querySelector("svg")) e.insertAdjacentHTML("afterbegin", icon(e.dataset.ic)); });
     this.editor = new Editor(this); this.tools = new Tools(this);
     this.wire(); await this.renderHome();
+    if (b && b.isFirstRun) { try { if (await b.isFirstRun()) setTimeout(() => this.firstRunPrompt(), 900); } catch {} }
     if (b) { b.on("open-files", (paths) => paths.forEach((p) => this.openPath(p))); b.on("menu", ({ cmd }) => this.menuCmd(cmd)); b.on("update", (u) => this.onUpdate(u)); }
     if (b && this.settings.reopen && this.settings.lastOpen && this.settings.lastOpen.length) { for (const p of this.settings.lastOpen.slice(0, 5)) { if (await b.exists(p)) this.openPath(p); } }
     status(t("appName"), "v" + this.version);
@@ -33,8 +36,8 @@ class App {
     const b = bridge(); const list = $("#recentList"); const rec = b ? await b.recent() : [];
     list.innerHTML = rec.length ? rec.map((r) => `<div class="ri" data-p="${esc(r.path)}"><span class="ic">📄</span><div style="min-width:0"><div class="nm">${esc(r.name)}</div><div class="pt">${esc(r.path)}</div></div></div>`).join("") : `<p class="muted">${esc(t("noRecent"))}</p>`;
     $$(".ri", list).forEach((x) => (x.onclick = () => this.openPath(x.dataset.p)));
-    const tools = [["open", "📂", t("openPdf"), ""], ["merge", "➕", t("merge"), ""], ["organize", "▦", t("organize"), ""], ["split", "✂", t("split"), ""], ["edit", "✎", t("editMode"), ""], ["sign", "✒", t("sign"), ""], ["compress", "🗜", t("compress"), "☁"], ["pdf-to-word", "W", "PDF → Word", "☁"], ["ocr-pdf", "🔍", t("ocr"), "☁"]];
-    $("#homeTools").innerHTML = tools.map(([id, ic, l, tag]) => `<button class="qt" data-qt="${id}"><span class="ic">${ic}</span><b>${esc(l)}</b>${tag ? `<small>${tag} LovePDF.me</small>` : ""}</button>`).join("");
+    const tools = [["open", "folder", t("openPdf"), ""], ["merge", "merge", t("merge"), ""], ["organize", "grid", t("organize"), ""], ["split", "split", t("split"), ""], ["edit", "edit", t("editMode"), ""], ["sign", "sign", t("sign"), ""], ["compress", "zap", t("compress"), "☁"], ["pdf-to-word", "word", "PDF → Word", "☁"], ["ocr-pdf", "search", t("ocr"), "☁"]];
+    $("#homeTools").innerHTML = tools.map(([id, ic, l, tag]) => `<button class="qt" data-qt="${id}">${icon(ic, 24)}<b>${esc(l)}</b>${tag ? `<small>${tag} LovePDF.me</small>` : ""}</button>`).join("");
     $$("[data-qt]", $("#homeTools")).forEach((x) => (x.onclick = async () => { const id = x.dataset.qt; if (id === "open") return this.openDialog(); if (id === "merge") return this.tools.merge(null); const files = await this.pickFiles(false); if (!files.length) return; const d = await this.openBytes(files[0].bytes, files[0].name, files[0].path); if (!d) return; if (id === "edit") return this.setMode("edit"); this.tools.run(id); }));
   }
   showHome() { $("#home").hidden = false; $("#docArea").hidden = true; $$(".doc-only").forEach((e) => (e.hidden = true)); $("#btnSave").disabled = true; $("#btnPrint").disabled = true; $("#editbar").hidden = true; $("#findbar").hidden = true; this.cur = null; this.renderTabs(); this.renderHome(); const b = bridge(); if (b) b.setTitle(""); }
@@ -85,7 +88,7 @@ class App {
   async print() {
     const d = this.cur; if (!d) return; const area = $("#printArea"); area.innerHTML = ""; status(t("print") + "…");
     const bytes = this.editor.hasEdits(d) ? await this.editor.flatten(d) : null; if (bytes) await d.replace(bytes);
-    for (const p of d.pages) { const vp = p.base.page.getViewport({ scale: 2, rotation: d.rotation }); const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; await p.base.page.render({ canvasContext: c.getContext("2d", { alpha: false }), viewport: vp }).promise; const img = new Image(); img.src = c.toDataURL("image/jpeg", 0.92); area.appendChild(img); status(t("rendering", { n: p.n })); }
+    for (const p of d.pages) { const vp = p.base.page.getViewport({ scale: 2, rotation: (p.base.page.rotate + d.rotation) % 360 }); const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; await p.base.page.render({ canvasContext: c.getContext("2d", { alpha: false }), viewport: vp }).promise; const img = new Image(); img.src = c.toDataURL("image/jpeg", 0.92); area.appendChild(img); status(t("rendering", { n: p.n })); }
     await new Promise((r) => setTimeout(r, 150)); const b = bridge(); if (b && b.print) await b.print({}); else window.print(); area.innerHTML = ""; status("");
   }
 
@@ -107,7 +110,10 @@ class App {
     $("#pgPrev").onclick = () => this.cur && this.cur.goTo(this.cur.current - 1); $("#pgNext").onclick = () => this.cur && this.cur.goTo(this.cur.current + 1);
     $("#pgNum").onchange = (e) => this.cur && this.cur.goTo(+e.target.value); $("#pgNum").onkeydown = (e) => { if (e.key === "Enter") { this.cur && this.cur.goTo(+e.target.value); this.viewport.focus(); } };
     $("#zoomIn").onclick = () => this.cur && this.cur.zoomStep(1); $("#zoomOut").onclick = () => this.cur && this.cur.zoomStep(-1); $("#zoomSel").onchange = (e) => { const v = e.target.value; this.cur && this.cur.setZoom(v === "width" || v === "page" ? v : +v); this.saveSettings({ zoom: v === "width" || v === "page" ? v : +v }); };
-    $("#btnRotate").onclick = () => this.cur && this.cur.rotate(90);
+    const rm = $("#rotateMenu"); $("#btnRotateMenu").onclick = (e) => { e.stopPropagation(); rm.hidden = !rm.hidden; }; document.addEventListener("click", () => { rm.hidden = true; });
+    $$("#rotateMenu button").forEach((b) => (b.onclick = () => { rm.hidden = true; const d = this.cur; if (!d) return; const w = b.dataset.rot; if (w === "view") d.rotate(90); else this.tools.rotatePages(d, w === "all" ? "all" : "current", w === "ccw" ? -90 : 90); }));
+    $("#btnCrop").onclick = async () => { if (!this.cur) return; await this.setMode("edit"); this.editor.startCrop(this.cur); };
+    $("#cropCancel").onclick = () => this.editor.cancelCrop(); $("#cropApply").onclick = () => this.editor.applyCrop(false); $("#cropApplyAll").onclick = () => this.editor.applyCrop(true); $("#cropAuto").onclick = () => this.editor.autoCrop();
     $("#btnFind").onclick = () => this.showFind(); $("#findClose").onclick = () => { $("#findbar").hidden = true; if (this.cur) this.cur.search(""); $("#findCount").textContent = ""; this.viewport.focus(); };
     const doFind = debounce(async () => { const d = this.cur; if (!d) return; const r = await d.search($("#findInput").value); $("#findCount").textContent = r.hits.length ? t("matches", { n: r.hits.length }) : (r.q ? t("noMatches") : ""); if (r.hits.length) d.findStep(1); }, 250);
     $("#findInput").oninput = doFind; $("#findInput").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); this.cur && this.cur.findStep(e.shiftKey ? -1 : 1); } if (e.key === "Escape") $("#findClose").click(); };
@@ -136,6 +142,7 @@ class App {
   nextTab(dir) { if (this.docs.length < 2) return; const i = this.docs.indexOf(this.cur); this.activate(this.docs[(i + dir + this.docs.length) % this.docs.length]); }
   menuCmd(cmd) { const d = this.cur; const map = { open: () => this.openDialog(), save: () => this.save(d), saveAs: () => this.save(d, true), print: () => this.print(), closeTab: () => this.closeDoc(d), undo: () => this.editor.undo(), redo: () => this.editor.redo(), find: () => this.showFind(), zoomIn: () => d && d.zoomStep(1), zoomOut: () => d && d.zoomStep(-1), fitWidth: () => d && d.setZoom("width"), fitPage: () => d && d.setZoom("page"), rotate: () => d && d.rotate(90), sidebar: () => this.toggleSidebar(), nextTab: () => this.nextTab(1), about: () => this.settingsDialog() }; if (map[cmd]) map[cmd](); }
 
+  firstRunPrompt() { const b = bridge(); const body = modal(t("firstRun.title"), `<p>${esc(t("firstRun.body"))}</p><div class="row end"><button class="btn" id="frNo">${esc(t("firstRun.no"))}</button><button class="btn btn-primary" id="frYes">${icon("star")} ${esc(t("firstRun.yes"))}</button></div>`, { size: "sm" }); $("#frNo", body).onclick = closeModal; $("#frYes", body).onclick = () => { closeModal(); b.setDefault(); }; }
   // ---------- settings / about / updates ----------
   settingsDialog() {
     const s = this.settings; const b = bridge();

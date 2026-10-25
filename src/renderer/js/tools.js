@@ -2,6 +2,7 @@
 // plus online tools (convert, compress, OCR, protect/unlock, translate) that use the LovePDF.me API.
 import { $, $$, el, esc, modal, closeModal, toast, status, loadDoc, PDFLib, openPdf, hexToRgb, parsePages, parseRanges, baseName, stripExt, dirOf, bridge, fmtBytes, confirm } from "./util.js";
 import { t } from "./i18n.js";
+import { icon } from "./icons.js";
 
 const API = "https://app.lovepdf.me";
 const MM = 72 / 25.4;
@@ -13,13 +14,13 @@ export class Tools {
 
   menu() {
     const items = [
-      ["organize", "▦", t("organize"), "local"], ["merge", "➕", t("merge"), "local"], ["split", "✂", t("split"), "local"], ["extract", "📑", t("extract"), "local"],
-      ["rotateAll", "⟳", t("rotateAll"), "local"], ["blank", "📄", t("blankPage"), "local"], ["watermark", "💧", t("watermark"), "local"], ["pageNumbers", "🔢", t("pageNumbers"), "local"], ["crop", "⌗", t("crop"), "local"],
-      ["sign", "✒", t("sign"), "local"], ["image", "🖼", t("images"), "local"],
-      ["compress", "🗜", t("compress"), "online"], ["pdf-to-word", "W", "PDF → Word", "online"], ["pdf-to-excel", "X", "PDF → Excel", "online"], ["pdf-to-powerpoint", "P", "PDF → PowerPoint", "online"], ["pdf-to-jpg", "🖼", "PDF → JPG", "online"],
-      ["ocr-pdf", "🔍", t("ocr"), "online"], ["protect-pdf", "🔒", t("protect"), "online"], ["translate-pdf", "🌐", t("translate"), "online"],
+      ["organize", "grid", t("organize"), "local"], ["merge", "merge", t("merge"), "local"], ["split", "split", t("split"), "local"], ["extract", "extract", t("extract"), "local"],
+      ["rotateAll", "rotcw", t("rotateAll"), "local"], ["blank", "plusfile", t("blankPage"), "local"], ["watermark", "drop", t("watermark"), "local"], ["pageNumbers", "hash", t("pageNumbers"), "local"], ["crop", "crop", t("crop"), "local"],
+      ["sign", "sign", t("sign"), "local"], ["image", "image", t("images"), "local"],
+      ["compress", "zap", t("compress"), "online"], ["pdf-to-word", "word", "PDF → Word", "online"], ["pdf-to-excel", "excel", "PDF → Excel", "online"], ["pdf-to-powerpoint", "filetext", "PDF → PowerPoint", "online"], ["pdf-to-jpg", "image", "PDF → JPG", "online"],
+      ["ocr-pdf", "search", t("ocr"), "online"], ["protect-pdf", "lock", t("protect"), "online"], ["translate-pdf", "globe", t("translate"), "online"],
     ];
-    const body = modal(t("tools"), `<div class="tools-grid">${items.map(([id, ic, label, kind]) => `<button class="qt" data-tool="${id}"><span class="ic">${ic}</span><b>${esc(label)}</b><small>${kind === "online" ? "☁ LovePDF.me" : "⚡ offline"}</small></button>`).join("")}</div>`, { size: "lg" });
+    const body = modal(t("tools"), `<div class="tools-grid">${items.map(([id, ic, label, kind]) => `<button class="qt" data-tool="${id}">${icon(ic, 24)}<b>${esc(label)}</b><small>${kind === "online" ? "☁ LovePDF.me" : "⚡ offline"}</small></button>`).join("")}</div>`, { size: "lg" });
     $$("[data-tool]", body).forEach((b) => (b.onclick = () => { closeModal(); this.run(b.dataset.tool); }));
   }
   async run(id) {
@@ -27,7 +28,7 @@ export class Tools {
     const needDoc = !["merge"].includes(id); if (needDoc && !d) { toast(t("toast.needPdf")); return; }
     try {
       if (id === "organize") return this.organize(d); if (id === "merge") return this.merge(d); if (id === "split") return this.split(d); if (id === "extract") return this.extract(d);
-      if (id === "rotateAll") return this.rotateAll(d); if (id === "blank") return this.blank(d); if (id === "watermark") return this.watermark(d); if (id === "pageNumbers") return this.pageNumbers(d); if (id === "crop") return this.crop(d);
+      if (id === "rotateAll") return this.rotatePages(d, "all", 90); if (id === "crop") { await this.app.setMode("edit"); this.app.editor.startCrop(d); return; } if (id === "blank") return this.blank(d); if (id === "watermark") return this.watermark(d); if (id === "pageNumbers") return this.pageNumbers(d); if (id === "crop") return this.crop(d);
       if (id === "sign") { await this.app.setMode("edit"); this.app.editor.setMode("signature"); return; } if (id === "image") { await this.app.setMode("edit"); this.app.editor.setMode("image"); return; }
       return this.online(d, id);
     } catch (e) { console.error(e); toast((e && e.message) || t("error"), 4000); }
@@ -76,7 +77,7 @@ export class Tools {
     };
   }
   async extract(d) { const spec = await this.app.ask(t("extract"), "1-3, 5", "pages"); if (spec == null) return; const bytes = await this.bytesOf(d); const src = await loadDoc(bytes); const pages = parsePages(spec, src.getPageCount()); if (!pages.length) return; const L = PDFLib(); const out = await L.PDFDocument.create(); const cp = await out.copyPages(src, pages.map((n) => n - 1)); cp.forEach((p) => out.addPage(p)); await this.app.openBytes(await out.save({ useObjectStreams: false }), stripExt(d.name) + "-extracted.pdf", null, true); }
-  async rotateAll(d) { const bytes = await this.bytesOf(d); const L = PDFLib(); const doc = await loadDoc(bytes); for (const p of doc.getPages()) p.setRotation(L.degrees((p.getRotation().angle + 90) % 360)); await this.apply(d, await doc.save({ useObjectStreams: false })); }
+  async rotatePages(d, which, deg = 90) { const bytes = await this.bytesOf(d); const L = PDFLib(); const doc = await loadDoc(bytes); const pages = which === "all" ? doc.getPages() : [doc.getPage(Math.max(0, d.current - 1))]; for (const p of pages) p.setRotation(L.degrees(((p.getRotation().angle + deg) % 360 + 360) % 360)); await this.apply(d, await doc.save({ useObjectStreams: false })); }
   async blank(d) { const bytes = await this.bytesOf(d); const doc = await loadDoc(bytes); const idx = Math.min(doc.getPageCount(), d.current); const sz = doc.getPage(Math.max(0, idx - 1)).getSize(); doc.insertPage(idx, [sz.width, sz.height]); await this.apply(d, await doc.save({ useObjectStreams: false })); }
   // ---------- watermark ----------
   async watermark(d) {
@@ -87,13 +88,6 @@ export class Tools {
     const body = modal(t("pn.title"), `<div class="form"><div class="grid2"><label>${esc(t("pn.pos"))}<select id="pnPos"><option value="bc">${esc(t("pn.bc"))}</option><option value="br">${esc(t("pn.br"))}</option><option value="bl">${esc(t("pn.bl"))}</option><option value="tc">${esc(t("pn.tc"))}</option></select></label><label>${esc(t("pn.fmt"))}<select id="pnFmt"><option value="1">${esc(t("pn.fmt1"))}</option><option value="2">${esc(t("pn.fmt2"))}</option></select></label><label>${esc(t("pn.start"))}<input type="number" id="pnStart" value="1"></label><label>${esc(t("pn.size"))}<input type="number" id="pnSize" value="11"></label></div><div class="row end"><button class="btn btn-primary" id="pnGo">${esc(t("pn.apply"))}</button></div></div>`, { size: "sm" });
     $("#pnGo", body).onclick = async () => { const pos = $("#pnPos", body).value, fmt = $("#pnFmt", body).value, start = +$("#pnStart", body).value || 1, size = +$("#pnSize", body).value || 11; const bytes = await this.bytesOf(d); const L = PDFLib(); const doc = await loadDoc(bytes); const font = await doc.embedFont(L.StandardFonts.Helvetica); const total = doc.getPageCount(); doc.getPages().forEach((p, i) => { const { width: w, height: h } = p.getSize(); const label = fmt === "2" ? `Page ${start + i} of ${total + start - 1}` : String(start + i); const tw = font.widthOfTextAtSize(label, size); const x = pos === "bl" ? 36 : pos === "br" ? w - 36 - tw : (w - tw) / 2; const y = pos === "tc" ? h - 30 : 24; p.drawText(label, { x, y, size, font, color: L.rgb(0.2, 0.2, 0.2) }); }); closeModal(); await this.apply(d, await doc.save({ useObjectStreams: false })); };
   }
-  async crop(d) {
-    const body = modal(t("cropUi.title"), `<div class="form"><p class="hint">${esc(t("cropUi.hint"))}</p><div class="grid2"><label>${esc(t("cropUi.top"))}<input type="number" id="crT" value="0"></label><label>${esc(t("cropUi.bottom"))}<input type="number" id="crB" value="0"></label><label>${esc(t("cropUi.left"))}<input type="number" id="crL" value="0"></label><label>${esc(t("cropUi.right"))}<input type="number" id="crR" value="0"></label></div><div class="row end"><button class="btn" id="crAuto">✨ ${esc(t("cropUi.auto"))}</button><button class="btn btn-primary" id="crGo">${esc(t("cropUi.apply"))}</button></div></div>`, { size: "sm" });
-    const go = async (margins) => { const bytes = await this.bytesOf(d); const doc = await loadDoc(bytes); for (const p of doc.getPages()) { const mb = p.getMediaBox(); const m = margins(p); const x0 = mb.x + m.l, y0 = mb.y + m.b, x1 = mb.x + mb.width - m.r, y1 = mb.y + mb.height - m.t; if (x1 - x0 < 20 || y1 - y0 < 20) continue; p.setCropBox(x0, y0, x1 - x0, y1 - y0); } closeModal(); await this.apply(d, await doc.save({ useObjectStreams: false })); };
-    $("#crGo", body).onclick = () => go(() => ({ t: (+$("#crT", body).value || 0) * MM, b: (+$("#crB", body).value || 0) * MM, l: (+$("#crL", body).value || 0) * MM, r: (+$("#crR", body).value || 0) * MM }));
-    $("#crAuto", body).onclick = async () => { const pdf = d.pdf; const boxes = {}; for (let n = 1; n <= pdf.numPages; n++) { const page = await pdf.getPage(n); const vp = page.getViewport({ scale: 0.5 }); const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; const ctx = c.getContext("2d"); await page.render({ canvasContext: ctx, viewport: vp }).promise; const im = ctx.getImageData(0, 0, c.width, c.height).data; let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0; for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) { const i = (y * c.width + x) * 4; if (im[i] < 235 || im[i + 1] < 235 || im[i + 2] < 235) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } } if (x1 > x0) boxes[n] = { l: x0 / 0.5 - 8, t: y0 / 0.5 - 8, r: (c.width - 1 - x1) / 0.5 - 8, b: (c.height - 1 - y1) / 0.5 - 8 }; } let i = 0; await go(() => { i++; const b = boxes[i]; return b ? { t: Math.max(0, b.t), b: Math.max(0, b.b), l: Math.max(0, b.l), r: Math.max(0, b.r) } : { t: 0, b: 0, l: 0, r: 0 }; }); };
-  }
-
   // ---------- online tools via LovePDF.me API ----------
   async online(d, tool) {
     const OPTS = { compress: { slug: "compress-pdf", options: {}, out: "pdf" }, "ocr-pdf": { slug: "ocr-pdf", options: { lang: "eng" }, out: "pdf" }, "protect-pdf": { slug: "protect-pdf", options: {}, out: "pdf" }, "translate-pdf": { slug: "translate-pdf", options: { to: "ur", format: "pdf" }, out: "pdf" }, "pdf-to-word": { slug: "pdf-to-word", out: "docx" }, "pdf-to-excel": { slug: "pdf-to-excel", out: "xlsx" }, "pdf-to-powerpoint": { slug: "pdf-to-powerpoint", out: "pptx" }, "pdf-to-jpg": { slug: "pdf-to-jpg", out: "zip" } };

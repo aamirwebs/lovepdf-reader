@@ -10,55 +10,68 @@
 <div id="app">
   <header id="topbar">
     <div class="tb-group">
-      <button class="tb" id="btnHome" title="Home"><span class="ic">🏠</span></button>
-      <button class="tb tb-text" id="btnOpen" title="Ctrl+O"><span class="ic">📂</span><span data-t="open">Open</span></button>
-      <button class="tb" id="btnSave" title="Ctrl+S" disabled><span class="ic">💾</span></button>
-      <button class="tb" id="btnPrint" title="Ctrl+P" disabled><span class="ic">🖨</span></button>
+      <button class="tb" id="btnHome" data-ic="home" title="Home"></button>
+      <button class="tb tb-text" id="btnOpen" data-ic="folder" title="Ctrl+O"><span data-t="open">Open</span></button>
+      <button class="tb tb-text" id="btnSave" data-ic="save" title="Ctrl+S" disabled><span data-t="save">Save</span></button>
+      <button class="tb" id="btnPrint" data-ic="printer" title="Ctrl+P" disabled></button>
     </div>
     <div class="tb-group doc-only">
-      <button class="tb" id="btnSidebar" title="F4"><span class="ic">☰</span></button>
       <span class="sep"></span>
-      <button class="tb" id="pgPrev" title="Previous page">‹</button>
+      <button class="tb" id="btnSidebar" data-ic="sidebar" title="F4"></button>
+      <button class="tb" id="pgPrev" data-ic="left" title="Previous page"></button>
       <input id="pgNum" type="text" inputmode="numeric" value="1" aria-label="Page"><span class="muted">/ <span id="pgTotal">0</span></span>
-      <button class="tb" id="pgNext" title="Next page">›</button>
+      <button class="tb" id="pgNext" data-ic="right" title="Next page"></button>
       <span class="sep"></span>
-      <button class="tb" id="zoomOut" title="Ctrl+-">−</button>
+      <button class="tb" id="zoomOut" data-ic="minus" title="Ctrl+-"></button>
       <select id="zoomSel" aria-label="Zoom"><option value="width">Fit width</option><option value="page">Fit page</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option><option value="4">400%</option></select>
-      <button class="tb" id="zoomIn" title="Ctrl+=">+</button>
+      <button class="tb" id="zoomIn" data-ic="plus" title="Ctrl+="></button>
       <span class="sep"></span>
-      <button class="tb" id="btnRotate" title="Ctrl+R"><span class="ic">⟳</span></button>
-      <button class="tb" id="btnFind" title="Ctrl+F"><span class="ic">🔍</span></button>
+      <div class="dd"><button class="tb tb-text" id="btnRotateMenu" data-ic="rotcw"><span data-t="rotate">Rotate</span> ▾</button><div class="dd-menu" id="rotateMenu" hidden>
+        <button data-rot="view" data-ic="eye"><span data-t="rot.view">Rotate view only</span></button>
+        <button data-rot="cw" data-ic="rotcw"><span data-t="rot.cw">Rotate this page ↻</span></button>
+        <button data-rot="ccw" data-ic="rotccw"><span data-t="rot.ccw">Rotate this page ↺</span></button>
+        <button data-rot="all" data-ic="layers"><span data-t="rot.all">Rotate all pages ↻</span></button></div></div>
+      <button class="tb tb-text" id="btnCrop" data-ic="crop"><span data-t="crop">Crop</span></button>
+      <button class="tb" id="btnFind" data-ic="search" title="Ctrl+F"></button>
     </div>
     <div class="tb-group doc-only">
-      <div class="seg" id="modeSeg"><button id="modeView" class="on" data-t="viewMode">View</button><button id="modeEdit">✎ <span data-t="editMode">Edit</span></button></div>
-      <button class="tb tb-text" id="btnPages"><span class="ic">▦</span><span data-t="pages">Pages</span></button>
-      <button class="tb tb-text" id="btnTools"><span class="ic">🧰</span><span data-t="tools">Tools</span></button>
+      <div class="seg" id="modeSeg"><button id="modeView" class="on" data-ic="eye"><span data-t="viewMode">View</span></button><button id="modeEdit" data-ic="edit"><span data-t="editMode">Edit</span></button></div>
+      <button class="tb tb-text" id="btnPages" data-ic="grid"><span data-t="pages">Pages</span></button>
+      <button class="tb tb-text" id="btnTools" data-ic="tools"><span data-t="tools">Tools</span></button>
     </div>
     <div class="tb-group tb-end">
-      <button class="tb" id="btnSettings" title="Settings"><span class="ic">⚙</span></button>
+      <button class="tb" id="btnSettings" data-ic="settings" title="Settings"></button>
     </div>
   </header>
   <div id="tabs" hidden></div>
   <div id="editbar" hidden>
     <div class="ed-modes" id="edModes"></div>
+    <span class="sep"></span>
     <label class="ed-opt"><span data-t="edit.color">Color</span> <input type="color" id="edColor" value="#d00000"></label>
-    <label class="ed-opt"><span data-t="edit.size">Size</span> <input type="range" id="edSize" min="6" max="72" value="14"><span id="edSizeV">14</span></label>
+    <label class="ed-opt"><span data-t="edit.size">Size</span> <input type="range" id="edSize" min="4" max="96" value="14"><span id="edSizeV">14</span></label>
     <label class="ed-opt chk"><input type="checkbox" id="edBold"> <span data-t="edit.bold">Bold</span></label>
     <span class="sep"></span>
-    <button class="tb" id="edUndo" title="Ctrl+Z">↶</button><button class="tb" id="edRedo" title="Ctrl+Y">↷</button><button class="tb" id="edDel" title="Delete">🗑</button>
+    <button class="tb" id="edUndo" data-ic="undo" title="Ctrl+Z"></button><button class="tb" id="edRedo" data-ic="redo" title="Ctrl+Y"></button><button class="tb" id="edDel" data-ic="trash" title="Delete"></button>
     <span class="ed-hint" id="edHint"></span>
     <input type="file" id="edImgInput" accept="image/*" hidden>
   </div>
+  <div id="cropbar" hidden>
+    <b data-t="cropUi.title">Crop pages</b><span class="muted" id="cropInfo"></span><span class="sp"></span>
+    <button class="btn btn-sm" id="cropAuto" data-ic="zap"><span data-t="cropUi.auto">Auto-trim white margins</span></button>
+    <button class="btn btn-sm" id="cropCancel"><span data-t="cancel">Cancel</span></button>
+    <button class="btn btn-sm btn-primary" id="cropApplyAll"><span data-t="cropUi.applyAll">Apply to all pages</span></button>
+    <button class="btn btn-sm btn-primary" id="cropApply"><span data-t="cropUi.applyOne">Apply to this page</span></button>
+  </div>
   <div id="findbar" hidden>
     <input id="findInput" type="search" placeholder="Find in document…"><span id="findCount" class="muted"></span>
-    <button class="tb" id="findPrev" title="Shift+Enter">▲</button><button class="tb" id="findNext" title="Enter">▼</button><button class="tb" id="findClose">✕</button>
+    <button class="tb" id="findPrev" data-ic="left" title="Shift+Enter"></button><button class="tb" id="findNext" data-ic="right" title="Enter"></button><button class="tb" id="findClose" data-ic="x"></button>
   </div>
   <main id="main">
     <section id="home">
       <div class="home-hero">
         <img src="icon.png" alt="" width="72" height="72">
         <div><h1 data-t="appName">LovePDF Reader and Editor</h1><p class="muted"><span data-t="dropHint">Drag &amp; drop PDF files anywhere in this window</span> · <span data-t="orClick">or click Open PDF</span></p></div>
-        <button class="btn btn-primary btn-lg" id="homeOpen">📂 <span data-t="openPdf">Open PDF</span></button>
+        <button class="btn btn-primary btn-lg" id="homeOpen" data-ic="folder"><span data-t="openPdf">Open PDF</span></button>
       </div>
       <div class="home-grid">
         <div class="home-col">
@@ -82,7 +95,7 @@
     </section>
   </main>
   <footer id="status"><span id="statusMsg"></span><span class="sp"></span><span id="statusRight" class="muted"></span></footer>
-  <div id="modal" hidden><div class="modal-box"><div class="modal-head"><b id="modalTitle"></b><span class="sp"></span><button class="tb" id="modalClose">✕</button></div><div id="modalBody"></div></div></div>
+  <div id="modal" hidden><div class="modal-box"><div class="modal-head"><b id="modalTitle"></b><span class="sp"></span><button class="tb" id="modalClose" data-ic="x"></button></div><div id="modalBody"></div></div></div>
   <div id="toast" hidden></div>
   <div id="dropOverlay" hidden><div>📄 Drop PDF files here</div></div>
   <div id="printArea" aria-hidden="true"></div>
