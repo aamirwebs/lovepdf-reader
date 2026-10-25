@@ -1,12 +1,12 @@
 // Edit mode: per-page overlay canvases with vector objects (text, draw, highlight, shapes, whiteout, images, signature,
 // notes, "edit text" = cover + retype) and a visual Crop tool. Objects live in PDF user space (origin bottom-left);
 // the overlay canvas uses the pdf.js viewport transform, so rotated pages and any zoom work the same way.
-import { $, $$, el, esc, hexToRgb, hexA, modal, closeModal, toast, loadDoc, PDFLib, embedImage, bridge } from "./util.js";
+import { $, $$, el, esc, hexToRgb, hexA, modal, closeModal, toast, loadDoc, PDFLib, embedImage, bridge, loadPdfJs } from "./util.js";
 import { t } from "./i18n.js";
 import { icon } from "./icons.js";
 
-export const MODES = ["select", "edittext", "text", "draw", "highlight", "rect", "ellipse", "arrow", "whiteout", "image", "signature", "note"];
-const ICON = { select: "pointer", edittext: "edittext", text: "type", draw: "pen", highlight: "highlight", rect: "square", ellipse: "circle", arrow: "arrow", whiteout: "eraser", image: "image", signature: "sign", note: "note" };
+export const MODES = ["select", "edittext", "cutout", "text", "draw", "highlight", "rect", "ellipse", "arrow", "whiteout", "image", "signature", "note"];
+const ICON = { select: "pointer", edittext: "edittext", cutout: "scissors", text: "type", draw: "pen", highlight: "highlight", rect: "square", ellipse: "circle", arrow: "arrow", whiteout: "eraser", image: "image", signature: "sign", note: "note" };
 const FONT = (o, s = 1) => `${o.bold ? "bold " : ""}${o.size * s}px Helvetica, Arial, "Noto Nastaliq Urdu", sans-serif`;
 const BOXES = new Set(["rect", "ellipse", "highlight", "whiteout", "image"]);
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
@@ -38,7 +38,7 @@ export class Editor {
 
   // ---------- enter / leave ----------
   async enter(d) {
-    if (!d.edits) d.edits = { active: false, objs: {}, textItems: {}, undo: [], redo: [], sel: null, drag: null, hover: null };
+    if (!d.edits) d.edits = { active: false, objs: {}, textItems: {}, imageItems: {}, undo: [], redo: [], sel: null, drag: null, hover: null }; if (!d.edits.imageItems) d.edits.imageItems = {};
     d.edits.active = true; if (d.rotation) { d.rotation = 0; d.relayout(); }
     $("#editbar").hidden = false; this.app.viewport.classList.add("editing"); this.setMode(this.mode); this.attachAll(d);
   }
@@ -47,7 +47,7 @@ export class Editor {
   ensureOverlay(d, p) {
     if (!d.edits || !d.edits.active || !p.el || !p.vp) return;
     if (!p.ov) { const ov = document.createElement("canvas"); ov.className = "ov"; p.el.appendChild(ov); p.ov = ov; p.octx = ov.getContext("2d"); this.bind(d, p); }
-    this.resize(d, p); this.loadTextItems(d, p);
+    this.resize(d, p); this.loadTextItems(d, p); this.loadImageItems(d, p);
   }
   resize(d, p) { if (!p.ov || !p.vp) return; const dpr = Math.min(3, window.devicePixelRatio || 1); p.ov.width = Math.round(p.vp.width * dpr); p.ov.height = Math.round(p.vp.height * dpr); p.ov.style.width = p.vp.width + "px"; p.ov.style.height = p.vp.height + "px"; p.octx = p.ov.getContext("2d"); p.dpr = dpr; this.draw(d, p.n); }
   async loadTextItems(d, p) {
@@ -58,6 +58,50 @@ export class Editor {
   /** Scanned page in "Edit text" mode → offer OCR (bar under the toolbar) instead of a dead end. */
   checkOcr(d) { if (!d || !d.edits || !d.edits.active || this.mode !== "edittext") return this.hideOcrBar(); const items = d.edits.textItems[d.current]; if (!items) return; const scanned = items.length === 0; if (scanned && !this.ocrDismissed) { $("#ocrbar").hidden = false; $("#edHint").textContent = t("edit.hint.noText"); } else this.hideOcrBar(); }
   hideOcrBar() { $("#ocrbar").hidden = true; }
+  vpRect(p, x, y, w, h) { const a = p.vp.convertToViewportPoint(x, y), b = p.vp.convertToViewportPoint(x + w, y + h); return [a[0], a[1], b[0], b[1]]; }
+  /** Dominant colour of the rendered page just outside a PDF-space rect (so covers blend with coloured cells / headers). */
+  sampleBg(p, x, y, w, h) {
+    try {
+      const c = p.canvas; if (!c || !p.vp) return "#ffffff"; const dpr = c.width / p.vp.width;
+      const r = this.vpRect(p, x, y, w, h); const x0 = Math.max(0, Math.floor(Math.min(r[0], r[2]) * dpr) - 2), y0 = Math.max(0, Math.floor(Math.min(r[1], r[3]) * dpr) - 2), x1 = Math.min(c.width - 1, Math.ceil(Math.max(r[0], r[2]) * dpr) + 2), y1 = Math.min(c.height - 1, Math.ceil(Math.max(r[1], r[3]) * dpr) + 2);
+      if (x1 <= x0 || y1 <= y0) return "#ffffff"; const ctx = c.getContext("2d", { willReadFrequently: true }); const counts = new Map(); let best = null, bestN = 0;
+      const add = (px) => { for (let i = 0; i < px.length; i += 4) { const k = ((px[i] >> 3) << 10) | ((px[i + 1] >> 3) << 5) | (px[i + 2] >> 3); const n = (counts.get(k) || 0) + 1; counts.set(k, n); if (n > bestN) { bestN = n; best = [px[i], px[i + 1], px[i + 2]]; } } };
+      add(ctx.getImageData(x0, y0, x1 - x0, 2).data); add(ctx.getImageData(x0, y1 - 2, x1 - x0, 2).data); add(ctx.getImageData(x0, y0, 2, y1 - y0).data); add(ctx.getImageData(x1 - 2, y0, 2, y1 - y0).data);
+      if (!best) return "#ffffff"; return "#" + best.map((v) => v.toString(16).padStart(2, "0")).join("");
+    } catch { return "#ffffff"; }
+  }
+  /** Images (logos, pictures, scanned backgrounds) drawn on the page, as PDF-space rects — from the pdf.js operator list. */
+  async loadImageItems(d, p) {
+    if (d.edits.imageItems[p.n]) return; d.edits.imageItems[p.n] = [];
+    try {
+      const lib = await loadPdfJs(); const OPS = lib.OPS; const ol = await p.base.page.getOperatorList(); const out = [];
+      let ctm = [1, 0, 0, 1, 0, 0]; const stack = []; const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+      for (let i = 0; i < ol.fnArray.length; i++) {
+        const fn = ol.fnArray[i], a = ol.argsArray[i];
+        if (fn === OPS.save) stack.push(ctm); else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0]; else if (fn === OPS.transform) ctm = mul(ctm, a);
+        else if (fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject || fn === OPS.paintInlineImageXObject || fn === OPS.paintImageMaskXObject || fn === OPS.paintImageXObjectRepeat) {
+          const pts = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => [ctm[0] * u + ctm[2] * v + ctm[4], ctm[1] * u + ctm[3] * v + ctm[5]]); const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+          const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x, h = Math.max(...ys) - y; const pw = p.base.w, ph = p.base.h;
+          if (w > 4 && h > 4 && !(w >= pw * 0.98 && h >= ph * 0.98)) out.push({ x, y, w, h }); // skip full-page scan backgrounds
+        }
+      }
+      d.edits.imageItems[p.n] = out.slice(0, 200);
+    } catch (e) { console.warn("image items", e); }
+    if (this.mode === "edittext") this.draw(d, p.n);
+  }
+  sampleInk(p, ti) { try { const c = p.canvas; if (!c) return null; const dpr = c.width / p.vp.width; const r = this.vpRect(p, ti.x, ti.y - ti.h * 0.25, ti.w, ti.h * 1.25); const x0 = Math.max(0, Math.floor(Math.min(r[0], r[2]) * dpr)), y0 = Math.max(0, Math.floor(Math.min(r[1], r[3]) * dpr)), w = Math.min(c.width - x0, Math.ceil(Math.abs(r[2] - r[0]) * dpr)), h = Math.min(c.height - y0, Math.ceil(Math.abs(r[3] - r[1]) * dpr)); if (w < 1 || h < 1) return null; const px = c.getContext("2d", { willReadFrequently: true }).getImageData(x0, y0, w, h).data; const bg = this.sampleBg(p, ti.x, ti.y - ti.h * 0.25, ti.w, ti.h * 1.25); const b = [parseInt(bg.slice(1, 3), 16), parseInt(bg.slice(3, 5), 16), parseInt(bg.slice(5, 7), 16)]; const counts = new Map(); let best = null, bestN = 0; for (let i = 0; i < px.length; i += 4) { const dist = Math.abs(px[i] - b[0]) + Math.abs(px[i + 1] - b[1]) + Math.abs(px[i + 2] - b[2]); if (dist < 120) continue; const k = ((px[i] >> 4) << 8) | ((px[i + 1] >> 4) << 4) | (px[i + 2] >> 4); const n = (counts.get(k) || 0) + 1; counts.set(k, n); if (n > bestN) { bestN = n; best = [px[i], px[i + 1], px[i + 2]]; } } if (!best || bestN < 4) return null; return "#" + best.map((v) => v.toString(16).padStart(2, "0")).join(""); } catch { return null; } }
+  imageHit(d, p, px, py) { const arr = d.edits.imageItems[p.n] || []; let best = null; for (const it of arr) if (px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h && (!best || it.w * it.h < best.w * best.h)) best = it; return best; }
+  /** Turn a rectangle of the rendered page into a movable image object and cover the original (move / resize / delete any element). */
+  async cutout(d, p, x, y, w, h, fromItem = null) {
+    const c = p.canvas; if (!c) return; const dpr = c.width / p.vp.width; const r = this.vpRect(p, x, y, w, h);
+    const sx = Math.max(0, Math.floor(Math.min(r[0], r[2]) * dpr)), sy = Math.max(0, Math.floor(Math.min(r[1], r[3]) * dpr)), sw = Math.min(c.width - sx, Math.ceil(Math.abs(r[2] - r[0]) * dpr)), sh = Math.min(c.height - sy, Math.ceil(Math.abs(r[3] - r[1]) * dpr)); if (sw < 2 || sh < 2) return;
+    const scale = Math.max(1, Math.min(3, 1600 / Math.max(sw, sh) * (p.vp.scale > 2 ? 1 : 1))); const oc = document.createElement("canvas"); oc.width = Math.round(sw * scale); oc.height = Math.round(sh * scale); oc.getContext("2d").drawImage(c, sx, sy, sw, sh, 0, 0, oc.width, oc.height);
+    const blob = await new Promise((res) => oc.toBlob(res, "image/png")); const bytes = new Uint8Array(await blob.arrayBuffer()); const img = new Image(); img.src = URL.createObjectURL(blob); await img.decode();
+    this.snapPage(d, p.n); const bg = this.sampleBg(p, x, y, w, h);
+    const cover = { type: "whiteout", n: p.n, x: x - 0.5, y: y - 0.5, w: w + 1, h: h + 1, color: bg, auto: true }; const o = { type: "image", n: p.n, x, y, w, h, img, bytes, mime: "image/png", cut: true };
+    this.list(d, p.n).push(cover, o); if (fromItem) d.edits.imageItems[p.n] = (d.edits.imageItems[p.n] || []).filter((i) => i !== fromItem);
+    this.mode = "select"; $$("#edModes button").forEach((b) => b.classList.toggle("on", b.dataset.m === "select")); $("#edHint").textContent = t("edit.hint.cut"); this.selectObj(d, o); this.draw(d, p.n);
+  }
   setMode(m) {
     if (this.crop) this.cancelCrop(); this.mode = m; const d = this.doc(); if (d) { d.edits.sel = null; this.commitText(); }
     $$("#edModes button").forEach((b) => b.classList.toggle("on", b.dataset.m === m)); $("#edHint").textContent = t("edit.hint." + m);
@@ -88,7 +132,7 @@ export class Editor {
     if (o.type === "note") return { x: o.x, y: o.y - 18, w: 18, h: 18 };
     return { x: o.x, y: o.y, w: o.w, h: o.h };
   }
-  hit(d, p, px, py) { const arr = this.list(d, p.n); const tol = 4 / this.scaleOf(p); for (let i = arr.length - 1; i >= 0; i--) { const b = this.bbox(p, arr[i]); if (px >= b.x - tol && px <= b.x + b.w + tol && py >= b.y - tol && py <= b.y + b.h + tol) return arr[i]; } return null; }
+  hit(d, p, px, py) { const arr = this.list(d, p.n); const tol = 4 / this.scaleOf(p); for (let i = arr.length - 1; i >= 0; i--) { if (arr[i].auto) continue; const b = this.bbox(p, arr[i]); if (px >= b.x - tol && px <= b.x + b.w + tol && py >= b.y - tol && py <= b.y + b.h + tol) return arr[i]; } return null; }
   textHit(d, p, px, py) { return (d.edits.textItems[p.n] || []).find((ti) => px >= ti.x && px <= ti.x + ti.w && py >= ti.y - ti.h * 0.25 && py <= ti.y + ti.h); }
   handlesOf(p, o) {
     if (o.type === "arrow") return [{ id: "a", x: o.x1, y: o.y1 }, { id: "b", x: o.x2, y: o.y2 }];
@@ -117,13 +161,13 @@ export class Editor {
     const ctx = p.octx, s = this.scaleOf(p), dpr = p.dpr || 1; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, p.ov.width, p.ov.height);
     const T = p.vp.transform; ctx.setTransform(T[0] * dpr, T[1] * dpr, T[2] * dpr, T[3] * dpr, T[4] * dpr, T[5] * dpr);
     if (this.crop && this.crop.n === p.n) return this.drawCrop(p);
-    if (this.mode === "edittext") { ctx.strokeStyle = "rgba(0,140,255,.5)"; ctx.lineWidth = 1 / s; for (const ti of d.edits.textItems[p.n] || []) { if (ti === d.edits.hover) { ctx.fillStyle = "rgba(0,140,255,.12)"; ctx.fillRect(ti.x, ti.y - ti.h * 0.25, ti.w, ti.h * 1.25); } ctx.strokeRect(ti.x, ti.y - ti.h * 0.25, ti.w, ti.h * 1.25); } }
+    if (this.mode === "edittext") { ctx.setLineDash([4 / s, 3 / s]); ctx.strokeStyle = "rgba(150,60,220,.55)"; ctx.lineWidth = 1 / s; for (const it of d.edits.imageItems[p.n] || []) { if (it === d.edits.hover) { ctx.fillStyle = "rgba(150,60,220,.10)"; ctx.fillRect(it.x, it.y, it.w, it.h); } ctx.strokeRect(it.x, it.y, it.w, it.h); } ctx.setLineDash([]); ctx.strokeStyle = "rgba(0,140,255,.5)"; ctx.lineWidth = 1 / s; for (const ti of d.edits.textItems[p.n] || []) { if (ti === d.edits.hover) { ctx.fillStyle = "rgba(0,140,255,.12)"; ctx.fillRect(ti.x, ti.y - ti.h * 0.25, ti.w, ti.h * 1.25); } ctx.strokeRect(ti.x, ti.y - ti.h * 0.25, ti.w, ti.h * 1.25); } }
     for (const o of this.list(d, p.n)) if (!o.hidden) this.drawObj(ctx, o, true);
     const sel = d.edits.sel; if (sel && sel.n === p.n) { const b = this.bbox(p, sel); ctx.save(); ctx.setLineDash([5 / s, 4 / s]); ctx.strokeStyle = "#1a73e8"; ctx.lineWidth = 1.5 / s; ctx.strokeRect(b.x - 4 / s, b.y - 4 / s, b.w + 8 / s, b.h + 8 / s); ctx.setLineDash([]); const hs = 8 / s; for (const h of this.handlesOf(p, sel)) { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#1a73e8"; ctx.lineWidth = 1.5 / s; ctx.beginPath(); if (sel.type === "arrow") ctx.arc(h.x, h.y, hs * 0.65, 0, Math.PI * 2); else ctx.rect(h.x - hs / 2, h.y - hs / 2, hs, hs); ctx.fill(); ctx.stroke(); } ctx.restore(); }
   }
   drawObj(ctx, o, screen) {
     ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
-    if (o.type === "whiteout") { ctx.fillStyle = "#fff"; ctx.fillRect(o.x, o.y, o.w, o.h); if (screen) { ctx.strokeStyle = "rgba(0,0,0,.15)"; ctx.lineWidth = 0.5; ctx.strokeRect(o.x, o.y, o.w, o.h); } }
+    if (o.type === "whiteout") { ctx.fillStyle = o.color || "#ffffff"; ctx.fillRect(o.x, o.y, o.w, o.h); if (screen && !o.auto) { ctx.strokeStyle = "rgba(0,0,0,.15)"; ctx.lineWidth = 0.5; ctx.strokeRect(o.x, o.y, o.w, o.h); } }
     else if (o.type === "highlight") { ctx.fillStyle = hexA(o.color || "#ffe600", 0.4); ctx.fillRect(o.x, o.y, o.w, o.h); }
     else if (o.type === "rect") { ctx.strokeStyle = o.color; ctx.lineWidth = o.width; ctx.strokeRect(o.x, o.y, o.w, o.h); }
     else if (o.type === "ellipse") { ctx.strokeStyle = o.color; ctx.lineWidth = o.width; ctx.beginPath(); ctx.ellipse(o.x + o.w / 2, o.y + o.h / 2, Math.max(0.5, o.w / 2), Math.max(0.5, o.h / 2), 0, 0, Math.PI * 2); ctx.stroke(); }
@@ -158,7 +202,12 @@ export class Editor {
       // grab a handle / the selected object in any mode
       const sel = E.sel; if (sel && sel.n === n) { const h = this.handleAt(p, sel, x, y); if (h) { this.snapPage(d, n); E.drag = { kind: "resize", o: sel, h: h.id, start: { o: this.clone(sel), b: this.bbox(p, sel) }, p }; return; } if (mode === "select" || ["image", "text", "note", "rect", "ellipse"].includes(sel.type)) { const hb = this.bbox(p, sel); const tol = 4 / this.scaleOf(p); if (x >= hb.x - tol && x <= hb.x + hb.w + tol && y >= hb.y - tol && y <= hb.y + hb.h + tol) { this.snapPage(d, n); E.drag = { kind: "move", o: sel, x, y, p }; return; } } }
       if (mode === "select") { const o = this.hit(d, p, x, y); this.selectObj(d, o); if (o) { this.snapPage(d, n); E.drag = { kind: "move", o, x, y, p }; } this.draw(d); return; }
-      if (mode === "edittext") { const ti = this.textHit(d, p, x, y); if (!ti) { const o = this.hit(d, p, x, y); if (o && o.type === "text") { this.selectObj(d, o); this.openText(d, p, o); } else if (!(E.textItems[n] || []).length) { this.ocrDismissed = false; this.checkOcr(d); } return; } this.snapPage(d, n); const wo = { type: "whiteout", n, x: ti.x - 1, y: ti.y - ti.h * 0.3, w: ti.w + 2, h: ti.h * 1.45 }; const tx = { type: "text", n, x: ti.x, y: ti.y, size: Math.max(6, Math.round(ti.h * 10) / 10), color: "#000000", text: ti.str, bold: false }; this.list(d, n).push(wo, tx); E.textItems[n] = E.textItems[n].filter((i) => i !== ti); this.selectObj(d, tx); this.openText(d, p, tx); return; }
+      if (mode === "edittext") {
+        const ti = this.textHit(d, p, x, y);
+        if (!ti) { const o = this.hit(d, p, x, y); if (o && o.type === "text") { this.selectObj(d, o); this.openText(d, p, o); return; } if (o) { this.selectObj(d, o); this.snapPage(d, n); E.drag = { kind: "move", o, x, y, p }; this.draw(d); return; } const im = this.imageHit(d, p, x, y); if (im) { ov.releasePointerCapture(e.pointerId); this.cutout(d, p, im.x, im.y, im.w, im.h, im); return; } if (!(E.textItems[n] || []).length) { this.ocrDismissed = false; this.checkOcr(d); } return; }
+        this.snapPage(d, n); const cx = ti.x - 1, cy = ti.y - ti.h * 0.3, cw = ti.w + 2, ch = ti.h * 1.45; const bg = this.sampleBg(p, cx, cy, cw, ch); const tc = this.sampleInk(p, ti) || "#000000";
+        const wo = { type: "whiteout", n, x: cx, y: cy, w: cw, h: ch, color: bg, auto: true }; const tx = { type: "text", n, x: ti.x, y: ti.y, size: Math.max(6, Math.round(ti.h * 10) / 10), color: tc, text: ti.str, bold: false }; this.list(d, n).push(wo, tx); E.textItems[n] = E.textItems[n].filter((i) => i !== ti); this.selectObj(d, tx); this.openText(d, p, tx); return; }
+      if (mode === "cutout") { E.drag = { kind: "cut", sx: x, sy: y, x, y, p }; this.draw(d, n); return; }
       if (mode === "text") { this.snapPage(d, n); const o = { type: "text", n, x, y, size: this.size(), color: this.color(), text: "", bold: this.bold() }; this.list(d, n).push(o); this.selectObj(d, o); this.openText(d, p, o); return; }
       if (mode === "note") { const text = await this.notePrompt(""); if (text == null || !text.trim()) return; this.snapPage(d, n); const o = { type: "note", n, x, y, text }; this.list(d, n).push(o); this.selectObj(d, o); this.draw(d, n); return; }
       if (mode === "image" || mode === "signature") { const pi = this.pendingImage; if (pi) { this.placeImage(d, p, pi, x, y); } else if (mode === "image") this.pickImage(); else this.signatureDialog(); return; }
@@ -171,15 +220,16 @@ export class Editor {
       if (!d.edits.active) return; const [x, y] = this.toPdf(p, e); const E = d.edits;
       if (this.crop) return this.cropMove(p, x, y, e);
       if (!E.drag) { const sel = E.sel; let cur = "default"; if (sel && sel.n === p.n) { const h = this.handleAt(p, sel, x, y); if (h) cur = { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", a: "move", b: "move" }[h.id]; else { const hb = this.bbox(p, sel); if (x >= hb.x && x <= hb.x + hb.w && y >= hb.y && y <= hb.y + hb.h) cur = "move"; } }
-        if (cur === "default") { if (this.mode === "edittext") { const ti = this.textHit(d, p, x, y); if (ti !== E.hover) { E.hover = ti; this.draw(d, p.n); } cur = ti ? "text" : "default"; } else if (this.mode === "select") cur = this.hit(d, p, x, y) ? "move" : "default"; else cur = "crosshair"; }
+        if (cur === "default") { if (this.mode === "edittext") { const ti = this.textHit(d, p, x, y); const hv = ti || this.imageHit(d, p, x, y) || null; if (hv !== E.hover) { E.hover = hv; this.draw(d, p.n); } cur = ti ? "text" : hv ? "move" : (this.hit(d, p, x, y) ? "move" : "default"); } else if (this.mode === "cutout") cur = "crosshair"; else if (this.mode === "select") cur = this.hit(d, p, x, y) ? "move" : "default"; else cur = "crosshair"; }
         ov.style.cursor = cur; return; }
       const dr = E.drag; if (dr.p !== p) return;
+      if (dr.kind === "cut") { dr.x = x; dr.y = y; this.draw(d, p.n); const c = p.octx, s2 = this.scaleOf(p); c.save(); c.setLineDash([5 / s2, 4 / s2]); c.strokeStyle = "#9333ea"; c.lineWidth = 1.5 / s2; c.fillStyle = "rgba(147,51,234,.08)"; const rx = Math.min(dr.sx, x), ry = Math.min(dr.sy, y), rw = Math.abs(x - dr.sx), rh = Math.abs(y - dr.sy); c.fillRect(rx, ry, rw, rh); c.strokeRect(rx, ry, rw, rh); c.restore(); return; }
       if (dr.kind === "path") dr.o.pts.push([x, y]); else if (dr.kind === "line") { dr.o.x2 = x; dr.o.y2 = y; } else if (dr.kind === "box") { dr.o.x = Math.min(dr.sx, x); dr.o.y = Math.min(dr.sy, y); dr.o.w = Math.abs(x - dr.sx); dr.o.h = Math.abs(y - dr.sy); }
       else if (dr.kind === "resize") this.resizeObj(p, dr.o, dr.h, x, y, dr.start, dr.o.type === "image" ? !e.shiftKey : e.shiftKey);
       else { this.moveObj(dr.o, x - dr.x, y - dr.y); dr.x = x; dr.y = y; }
       this.draw(d, p.n);
     };
-    ov.onpointerup = (e) => { if (this.crop) return this.cropUp(); const E = d.edits; if (E.drag && E.drag.kind === "box" && (E.drag.o.w < 2 || E.drag.o.h < 2)) { d.edits.objs[p.n] = this.list(d, p.n).filter((o) => o !== E.drag.o); E.undo.pop(); } if (E.drag && ["box", "line", "path"].includes(E.drag.kind)) this.selectObj(d, this.mode === "draw" ? null : E.drag.o); E.drag = null; this.draw(d, p.n); };
+    ov.onpointerup = (e) => { if (this.crop) return this.cropUp(); const E = d.edits; if (E.drag && E.drag.kind === "cut") { const dr = E.drag; E.drag = null; const rx = Math.min(dr.sx, dr.x), ry = Math.min(dr.sy, dr.y), rw = Math.abs(dr.x - dr.sx), rh = Math.abs(dr.y - dr.sy); if (rw > 3 && rh > 3) this.cutout(d, p, rx, ry, rw, rh); else this.draw(d, p.n); return; } if (E.drag && E.drag.kind === "box" && (E.drag.o.w < 2 || E.drag.o.h < 2)) { d.edits.objs[p.n] = this.list(d, p.n).filter((o) => o !== E.drag.o); E.undo.pop(); } if (E.drag && ["box", "line", "path"].includes(E.drag.kind)) this.selectObj(d, this.mode === "draw" ? null : E.drag.o); E.drag = null; this.draw(d, p.n); };
     ov.oncontextmenu = (e) => { e.preventDefault(); const [x, y] = this.toPdf(p, e); const o = this.hit(d, p, x, y); if (o) { this.selectObj(d, o); this.draw(d, p.n); this.app.objectMenu(d, p, o, { x: e.clientX, y: e.clientY }); } else this.app.pageMenu([p.n], { x: e.clientX, y: e.clientY }, { viewer: true }); };
     ov.ondblclick = (e) => { const [x, y] = this.toPdf(p, e); const o = this.hit(d, p, x, y); if (o && o.type === "text") { this.selectObj(d, o); this.openText(d, p, o); } else if (o && o.type === "note") this.notePrompt(o.text).then((v) => { if (v != null) { this.snapPage(d, p.n); o.text = v; } }); };
   }
@@ -258,7 +308,7 @@ export class Editor {
     for (const [n, arr] of Object.entries(d.edits.objs)) {
       if (!arr.length) continue; const page = doc.getPage(+n - 1);
       for (const o of arr) {
-        if (o.type === "whiteout") page.drawRectangle({ x: o.x, y: o.y, width: o.w, height: o.h, color: L.rgb(1, 1, 1) });
+        if (o.type === "whiteout") page.drawRectangle({ x: o.x, y: o.y, width: o.w, height: o.h, color: rgbOf(o.color || "#ffffff") });
         else if (o.type === "highlight") page.drawRectangle({ x: o.x, y: o.y, width: o.w, height: o.h, color: rgbOf(o.color || "#ffe600"), opacity: 0.4, blendMode: "Multiply" });
         else if (o.type === "rect") page.drawRectangle({ x: o.x, y: o.y, width: o.w, height: o.h, borderColor: rgbOf(o.color), borderWidth: o.width });
         else if (o.type === "ellipse") page.drawEllipse({ x: o.x + o.w / 2, y: o.y + o.h / 2, xScale: o.w / 2, yScale: o.h / 2, borderColor: rgbOf(o.color), borderWidth: o.width });
@@ -273,7 +323,7 @@ export class Editor {
         }
       }
     }
-    const bytes = await doc.save({ useObjectStreams: false }); d.edits.objs = {}; d.edits.undo = []; d.edits.redo = []; d.edits.sel = null; d.edits.textItems = {}; return bytes;
+    const bytes = await doc.save({ useObjectStreams: false }); d.edits.objs = {}; d.edits.undo = []; d.edits.redo = []; d.edits.sel = null; d.edits.textItems = {}; d.edits.imageItems = {}; return bytes;
   }
 }
 function trimCanvas(c) { const ctx = c.getContext("2d"); const d = ctx.getImageData(0, 0, c.width, c.height).data; let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0; for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } if (x1 <= x0) return c; const o = document.createElement("canvas"); o.width = x1 - x0 + 20; o.height = y1 - y0 + 20; o.getContext("2d").drawImage(c, x0 - 10, y0 - 10, o.width, o.height, 0, 0, o.width, o.height); return o; }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' app: blob: data:; script-src 'self' app: blob: 'wasm-unsafe-eval'; style-src 'self' app: 'unsafe-inline'; img-src 'self' app: blob: data: https:; connect-src 'self' app: blob: data: https://app.lovepdf.me https://www.lovepdf.me https://lovepdf.me; frame-src https://www.lovepdf.me https://lovepdf.me https://app.lovepdf.me; font-src 'self' app: data:; worker-src 'self' app: blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' app: blob: data:; script-src 'self' app: blob: 'wasm-unsafe-eval'; style-src 'self' app: 'unsafe-inline'; img-src 'self' app: blob: data: https:; connect-src 'self' app: blob: data: https://app.lovepdf.me https://www.lovepdf.me https://lovepdf.me; frame-src https://www.lovepdf.me https://lovepdf.me https://app.lovepdf.me https://www.youtube-nocookie.com https://www.youtube.com; media-src https: blob:; font-src 'self' app: data:; worker-src 'self' app: blob:;">
 <title>LovePDF Reader and Editor</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -56,6 +56,7 @@
       </div>
     </div>
   </header>
+  <div id="adTop" class="ad-slot ad-top" hidden></div>
   <div id="editbar" hidden>
     <div class="ed-modes" id="edModes"></div>
     <span class="sep"></span>
@@ -103,7 +104,7 @@
           <div id="homeAd" class="ad-slot ad-home" hidden></div>
         </div>
       </div>
-      <p class="home-foot muted">⚡ <span data-t="set.about1"></span> · <a href="#" data-ext="https://www.lovepdf.me/?utm_source=windows-app">www.lovepdf.me</a></p>
+      <p class="home-foot muted">⚡ <span data-t="set.about1"></span> · <a href="#" data-ext="https://www.lovepdf.me/?utm_source=windows-app">www.lovepdf.me</a> · <span data-t="about.dev">Developed by</span> <a href="#" data-ext="https://www.soft.com.pk/?utm_source=lovepdf-windows">Soft Technologies — www.soft.com.pk</a> <span id="homeApps"></span></p>
     </section>
     <section id="docArea" hidden>
       <aside id="sidebar" hidden>

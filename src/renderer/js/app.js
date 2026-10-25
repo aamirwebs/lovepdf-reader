@@ -13,7 +13,7 @@ const API = "https://app.lovepdf.me"; // all calls go through the main process (
 const SITE = "https://www.lovepdf.me";
 class App {
   constructor() {
-    this.docs = []; this.cur = null; this.settings = { theme: "system", lang: "en", zoom: "width", reopen: true }; this.account = null; this.token = null; this.version = "1.2.0";
+    this.docs = []; this.cur = null; this.settings = { theme: "system", lang: "en", zoom: "width", reopen: true }; this.account = null; this.token = null; this.version = "1.3.0";
     this.viewport = $("#viewport"); this.pagesWrap = $("#pagesWrap"); this.$ = $;
   }
   async init() {
@@ -26,7 +26,7 @@ class App {
     this.editor = new Editor(this); this.tools = new Tools(this); this.ads = new Ads(this);
     this.wire(); this.updateAccountUi(); await this.renderHome();
     if (b && b.isFirstRun) { try { if (await b.isFirstRun()) setTimeout(() => this.firstRunPrompt(), 900); } catch {} }
-    if (b) { b.on("open-files", (paths) => paths.forEach((p) => this.openPath(p))); b.on("menu", ({ cmd, arg }) => this.menuCmd(cmd, arg)); b.on("update", (u) => this.onUpdate(u)); }
+    if (b) { b.on("open-files", (paths) => paths.forEach((p) => this.openPath(p))); b.on("menu", ({ cmd, arg }) => this.menuCmd(cmd, arg)); b.on("update", (u) => this.onUpdate(u)); b.on("app-closing", () => this.onClosing()); }
     if (b && this.settings.reopen && this.settings.lastOpen && this.settings.lastOpen.length) { for (const p of this.settings.lastOpen.slice(0, 5)) { if (await b.exists(p)) this.openPath(p); } }
     status(t("appName"), "v" + this.version);
     this.ads.init().catch(() => {});
@@ -45,7 +45,7 @@ class App {
     const tools = [["open", "folder", t("openPdf"), ""], ["merge", "merge", t("merge"), ""], ["organize", "grid", t("organize"), ""], ["split", "split", t("split"), ""], ["edit", "edit", t("editMode"), ""], ["sign", "sign", t("sign"), ""], ["compress", "zap", t("compress"), "☁"], ["pdf-to-word", "word", "PDF → Word", "☁"], ["ocr-edit", "edittext", t("ocrUi.menu"), "☁"]];
     $("#homeTools").innerHTML = tools.map(([id, ic, l, tag]) => `<button class="qt" data-qt="${id}">${icon(ic, 24)}<b>${esc(l)}</b>${tag ? `<small>${tag} LovePDF.me</small>` : ""}</button>`).join("");
     $$("[data-qt]", $("#homeTools")).forEach((x) => (x.onclick = async () => { const id = x.dataset.qt; if (id === "open") return this.openDialog(); if (id === "merge") return this.tools.merge(null); const files = await this.pickFiles(false); if (!files.length) return; const d = await this.openBytes(files[0].bytes, files[0].name, files[0].path); if (!d) return; if (id === "edit") return this.setMode("edit"); this.tools.run(id); }));
-    if (this.ads) this.ads.render();
+    if (this.ads) { this.ads.render(); this.renderAppLinks(); }
   }
   showHome() { $("#home").hidden = false; $("#docArea").hidden = true; $$(".doc-only").forEach((e) => (e.hidden = true)); $("#btnSave").disabled = true; $("#btnPrint").disabled = true; $("#editbar").hidden = true; $("#ocrbar").hidden = true; $("#findbar").hidden = true; this.cur = null; this.renderTabs(); this.renderHome(); const b = bridge(); if (b) b.setTitle(""); this.ads.render(); }
 
@@ -87,7 +87,7 @@ class App {
     try {
       const bytes = this.editor.hasEdits(d) ? await this.editor.flatten(d) : d.bytes; let path = d.path;
       if (!path || forceAs || !b) { if (b) { path = await b.saveAsDialog(d.name.replace(/\.pdf$/i, "") + ".pdf"); if (!path) { status(""); return false; } } else { download(bytes, d.name); d.dirty = false; this.renderTabs(); status(t("saved")); return true; } }
-      await b.writeFile(path, bytes); const changed = bytes !== d.bytes; d.path = path; d.name = baseName(path); if (changed) await d.replace(bytes, { keepDirty: false }); d.dirty = false; this.renderTabs(); this.rememberOpen(); b.setTitle(d.name); status(t("savedTo", { path })); toast(t("saved")); this.ads.action("save", { slot: "save" }); return true;
+      await b.writeFile(path, bytes); const changed = bytes !== d.bytes; d.path = path; d.name = baseName(path); if (changed) await d.replace(bytes, { keepDirty: false }); d.dirty = false; this.renderTabs(); this.rememberOpen(); b.setTitle(d.name); status(t("savedTo", { path })); toast(t("saved")); this.ads.action("save", { slot: "save" }); if (changed) this.ads.afterSave(); return true;
     } catch (e) { console.error(e); toast(t("error") + ": " + (e.message || e), 5000); status(""); return false; }
   }
   async saveBytesAs(bytes, name, ext = "pdf") { const b = bridge(); if (!b) { download(bytes, name); return name; } const path = await b.saveAsDialog(name, [{ name: ext.toUpperCase(), extensions: [ext] }]); if (!path) return null; await b.writeFile(path, bytes); toast(t("savedTo", { path }), 3500); return path; }
@@ -135,6 +135,7 @@ class App {
       { label: t("edit.signature"), icon: "sign", disabled: no, action: async () => { await this.setMode("edit"); this.editor.setMode("signature"); } },
       { label: t("edit.highlight"), icon: "highlight", disabled: no, action: async () => { await this.setMode("edit"); this.editor.setMode("highlight"); } },
       { label: t("edit.whiteout"), icon: "eraser", disabled: no, action: async () => { await this.setMode("edit"); this.editor.setMode("whiteout"); } },
+      { label: t("edit.cutout"), icon: "scissors", disabled: no, hint: t("edit.cutoutHint"), action: async () => { await this.setMode("edit"); this.editor.setMode("cutout"); } },
       { sep: true },
       { label: t("ocrUi.menu"), icon: "zap", disabled: no, hint: "☁", action: () => T.ocrEditable(d, "all") },
       { sep: true },
@@ -165,9 +166,12 @@ class App {
     ];
     if (id === "help") return [
       { label: t("help.shortcuts"), icon: "keyboard", action: () => this.shortcutsDialog() },
+      { label: t("help.guide"), icon: "info", action: () => this.openExt(this.link("help", SITE + "/windows/help") + "?utm_source=windows-app") },
       { label: t("help.website"), icon: "external", action: () => this.openExt(SITE + "/?utm_source=windows-app&utm_medium=help") },
-      { label: t("help.scanner"), icon: "phone", action: () => this.openExt(SITE + "/tools/scan-to-pdf?utm_source=windows-app") },
-      { label: t("help.contact"), icon: "user", action: () => this.openExt(SITE + "/contact?utm_source=windows-app") },
+      { label: t("help.scanner"), icon: "phone", action: () => this.openExt(this.link("scanner", SITE + "/tools/scan-to-pdf") + "?utm_source=windows-app") },
+      ...(this.link("android") ? [{ label: t("help.android"), icon: "android", action: () => this.openExt(this.link("android")) }] : []),
+      ...(this.link("ios") ? [{ label: t("help.ios"), icon: "apple", action: () => this.openExt(this.link("ios")) }] : []),
+      { label: t("help.contact"), icon: "user", action: () => this.openExt(this.link("contact", SITE + "/contact-us") + "?utm_source=windows-app") },
       { sep: true },
       ...(b ? [{ label: t("set.defaultApp"), icon: "star", action: () => b.setDefault() }, { label: t("set.updates"), icon: "refresh", action: () => { b.checkUpdates(); toast(t("set.checking")); } }] : []),
       { label: t("settings"), icon: "settings", action: () => this.settingsDialog() },
@@ -222,6 +226,8 @@ class App {
     { sep: true }, { label: t("rot.selected"), icon: "grid", hint: t("rot.selectedHint"), action: () => { this.toggleSidebar(true); this.tools.rotateSel(d, d.selectedPages(), 90); } },
   ], { anchor, minWidth: 260 }); }
   openExt(url) { const b = bridge(); if (b) b.openExternal(url); else window.open(url); }
+  link(k, dflt = "") { const l = this.ads && this.ads.cfg && this.ads.cfg.links; return (l && l[k]) || dflt; }
+  renderAppLinks() { const el0 = $("#homeApps"); if (!el0) return; const a = this.link("android"), i = this.link("ios"); el0.innerHTML = (a ? ` · <a href="#" data-ext="${esc(a)}">${icon("android", 14)} ${esc(t("help.android"))}</a>` : "") + (i ? ` · <a href="#" data-ext="${esc(i)}">${icon("apple", 14)} ${esc(t("help.ios"))}</a>` : ""); }
   setLanguage(c) { this.saveSettings({ lang: c }); setLang(c); this.applyStrings(); this.editor.rebuildBar(); this.renderHome(); if (this.cur) this.updatePageUi(); }
 
   // ---------- wiring ----------
@@ -268,6 +274,15 @@ class App {
     document.addEventListener("drop", async (e) => { e.preventDefault(); dragDepth = 0; ov.hidden = true; const files = [...(e.dataTransfer?.files || [])].filter((f) => /\.pdf$/i.test(f.name)); const b = bridge(); for (const f of files) { const p = b && b.pathOf ? b.pathOf(f) : null; if (p) await this.openPath(p); else await this.openBytes(new Uint8Array(await f.arrayBuffer()), f.name); } });
     document.addEventListener("click", (e) => { const a = e.target.closest("[data-ext]"); if (a) { e.preventDefault(); this.openExt(a.dataset.ext); } });
   }
+  /** Window ✕ / Alt+F4: ask about unsaved files, play the "on close" promo video if configured, then really quit. */
+  async onClosing() {
+    const b = bridge(); if (!b) return; if (this.closing) return; this.closing = true; try { await b.closingAck(); } catch {}
+    try {
+      for (const d of [...this.docs]) { if (d.dirty || this.editor.hasEdits(d)) { this.activate(d); const r = await confirm(t("unsaved"), t("unsavedAsk", { name: d.name }), [t("save"), t("dontSave"), t("cancel")]); if (r === 2) { this.closing = false; await b.cancelClose(); return; } if (r === 0) { const ok = await this.save(d); if (!ok) { this.closing = false; await b.cancelClose(); return; } } d.dirty = false; if (d.edits) d.edits.objs = {}; } }
+      await this.ads.flush(); await this.ads.video("close");
+    } catch (e) { console.error(e); }
+    b.quit(true);
+  }
   showFind() { if (!this.cur) return; $("#findbar").hidden = false; const i = $("#findInput"); i.focus(); i.select(); }
   nextTab(dir) { if (this.docs.length < 2) return; const i = this.docs.indexOf(this.cur); this.activate(this.docs[(i + dir + this.docs.length) % this.docs.length]); }
   menuCmd(cmd, arg) { const d = this.cur; const map = { open: () => this.openDialog(), save: () => this.save(d), saveAs: () => this.save(d, true), print: async () => { if (arg) { const x = await this.openPath(arg); if (x) await new Promise((r) => setTimeout(r, 400)); } this.print(); }, closeTab: () => this.closeDoc(d), undo: () => this.editor.undo(), redo: () => this.editor.redo(), find: () => this.showFind(), zoomIn: () => d && d.zoomStep(1), zoomOut: () => d && d.zoomStep(-1), fitWidth: () => d && d.setZoom("width"), fitPage: () => d && d.setZoom("page"), rotate: () => d && d.rotate(90), sidebar: () => this.toggleSidebar(), nextTab: () => this.nextTab(1), about: () => this.aboutDialog() }; if (map[cmd]) map[cmd](); }
@@ -277,7 +292,7 @@ class App {
     const rows = [["Ctrl+O", t("open")], ["Ctrl+S", t("save")], ["Ctrl+Shift+S", t("saveAs")], ["Ctrl+P", t("print")], ["Ctrl+W", t("file.closeTab")], ["Ctrl+F", t("find")], ["Ctrl+E", t("editMode") + " / " + t("viewMode")], ["Ctrl+Z / Ctrl+Y", t("edit.undo") + " / " + t("edit.redo")], ["Ctrl+D", t("obj.duplicate")], ["Del", t("edit.delete")], ["Ctrl + / Ctrl −", t("zoomIn") + " / " + t("zoomOut")], ["Ctrl+0 / Ctrl+1", t("fitWidth") + " / " + t("fitPage")], ["Ctrl+R", t("rot.view")], ["F4", t("sidebar")], ["F11", t("view.fullscreen")], ["Ctrl+Tab", t("tabs.next")], ["PgUp / PgDn", t("prev") + " / " + t("next")], ["Alt+F, Alt+E…", t("help.menus")], [t("help.rightClick"), t("help.rightClickHint")]];
     modal(t("help.shortcuts"), `<div class="sc-grid">${rows.map(([k, v]) => `<div><span>${esc(v)}</span><span class="kbd">${esc(k)}</span></div>`).join("")}</div>`, {});
   }
-  aboutDialog() { const i = this.info || {}; modal(t("about"), `<div class="about"><img src="icon.png" alt=""><div><h3 style="margin:0 0 4px">LovePDF Reader and Editor</h3><p class="muted" style="margin:0 0 8px">${esc(t("set.version", { v: this.version }))}${i.electron ? ` · Electron ${esc(i.electron)} · Chrome ${esc(i.chrome)}` : ""}</p><p>${esc(t("set.about1"))}</p><p>📱 ${esc(t("set.scanner"))}</p><p><a href="#" data-ext="${SITE}/?utm_source=windows-app">${esc(t("set.website"))}</a> · <a href="#" data-ext="${SITE}/privacy">Privacy</a> · <a href="#" data-ext="${SITE}/terms">Terms</a> · <a href="#" data-ext="https://github.com/aamirwebs/lovepdf-reader/releases">Releases</a></p><p class="hint">© 2026 LovePDF.me · pdf.js (Apache-2.0) · pdf-lib (MIT) · Electron (MIT)</p></div></div>`, { size: "sm" }); }
+  aboutDialog() { const i = this.info || {}; modal(t("about"), `<div class="about"><img src="icon.png" alt=""><div><h3 style="margin:0 0 4px">LovePDF Reader and Editor</h3><p class="muted" style="margin:0 0 8px">${esc(t("set.version", { v: this.version }))}${i.electron ? ` · Electron ${esc(i.electron)} · Chrome ${esc(i.chrome)}` : ""}</p><p>${esc(t("set.about1"))}</p><p>📱 ${esc(t("set.scanner"))}</p><p><a href="#" data-ext="${SITE}/?utm_source=windows-app">${esc(t("set.website"))}</a> · <a href="#" data-ext="${SITE}/privacy">Privacy</a> · <a href="#" data-ext="${SITE}/terms">Terms</a> · <a href="#" data-ext="https://github.com/aamirwebs/lovepdf-reader/releases">Releases</a></p><p>${esc(t("about.dev"))} <a href="#" data-ext="https://www.soft.com.pk/?utm_source=lovepdf-windows">Soft Technologies — www.soft.com.pk</a> (${esc(t("about.devSub"))})</p><p class="hint">© 2026 LovePDF.me · pdf.js (Apache-2.0) · pdf-lib (MIT) · Electron (MIT)</p></div></div>`, { size: "sm" }); }
   // ---------- settings / about / updates ----------
   settingsDialog() {
     const s = this.settings; const b = bridge();

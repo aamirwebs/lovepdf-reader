@@ -50,6 +50,15 @@ Website zip **v3.3.0** install karne ke baad admin sidebar mein naya page **Wind
 - **AdSense (default OFF)**: ⚠️ AdSense policy desktop software mein ads allow nahi karti (apps ke liye AdMob hai) — on karne se poora AdSense account risk mein aa sakta hai. Apne promo + direct banners + Pro promo safe hain.
 - Stats isi page par: Windows PCs, opens, impressions/clicks per slot, versions, daily usage.
 
+## 7) v1.3.0 — kya naya hai
+- **Edit text ka white box**: ab cover ka rang page se sample hota hai (blue header cell → blue cover, white text → white rehta hai); screen par koi grey border nahi.
+- **Logo / tasveer / koi bhi element move ya remove**: Edit text mode mein logo/picture par click → wo object ban jata hai (drag, resize, Delete). Naya tool **Move / remove area** (✂): page ke kisi bhi hisse ke gird box banayen → object ban jata hai — scanned pages par bhi kaam karta hai.
+- **Ads**: AdSense hata diya (policy risk). Banners ab 100% dikhte hain (image URL fix) — slots: **Top strip** (toolbar ke neeche), Home card, Sidebar, Bottom strip, Interstitial. "Banners first" ON = jahan banner hai wahan promo nahi.
+- **After save → website**: edited PDF save hone par browser mein aapki site khulti hai (adminweb → Windows app → card 4: URL, har N saves, per-day max).
+- **Video**: app start ya close par aapki video (YouTube ya .mp4) — adminweb card 5.
+- Help menu: Help & how to (`/windows/help`), Contact (`/contact-us` fix), Android/iOS app links jab Settings → Mobile app mein URL ho; About mein Soft Technologies (www.soft.com.pk).
+- Website v3.4.0 zaroori hai (config ka naya format).
+
 ## Notes
 - Pehli baar Windows SmartScreen "unknown publisher" dikhayega (More info → Run anyway). Hatane ke liye code-signing certificate chahiye (optional, ~$200–400/saal).
 - Installer `.pdf` ko register karta hai; Windows 10/11 mein user ko Settings → Default apps mein LovePDF Reader chunna hota hai (app ke Settings / Help menu mein button hai).

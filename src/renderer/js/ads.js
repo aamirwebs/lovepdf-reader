@@ -7,12 +7,12 @@ import { t } from "./i18n.js";
 import { icon } from "./icons.js";
 
 const DAY = () => new Date().toISOString().slice(0, 10);
-const SIZES = { home: [336, 280], side: [200, 200], bottom: [728, 90], inter: [336, 280] };
+const SIZES = { top: [728, 60], home: [336, 280], side: [200, 200], bottom: [728, 90], inter: [336, 280] };
 
 export class Ads {
   constructor(app) {
     this.app = app; this.cfg = null; this.startAt = Date.now(); this.closed = {}; this.rot = {}; this.queue = []; this.timer = null; this.busy = false;
-    const st = app.settings.adStats || {}; this.stats = st.day === DAY() ? st : { day: DAY(), actions: 0, inters: 0, lastInter: 0, edits: 0, saves: 0 };
+    const st = app.settings.adStats || {}; this.stats = st.day === DAY() ? st : { day: DAY(), actions: 0, inters: 0, lastInter: 0, edits: 0, saves: 0, after: 0, videos: 0 };
   }
   // ---------- config ----------
   async init() {
@@ -25,6 +25,7 @@ export class Ads {
     const q = `?version=${encodeURIComponent(this.app.version)}&lang=${encodeURIComponent(this.app.settings.lang || "en")}&plan=${this.plan()}`;
     const cfg = await this.app.api("/app/windows-config" + q, null, "GET");
     if (!cfg || typeof cfg !== "object") return; this.cfg = cfg; this.app.saveSettings({ winConfig: { at: Date.now(), cfg } }); this.render(); this.notice();
+    if (!this.startupDone) { this.startupDone = true; const delay = Math.max(2, this.freq("startupDelaySec", 20)); setTimeout(() => { if ($("#modal").hidden) this.video("start"); }, delay * 1000); }
   }
   async registerDevice() {
     const b = bridge(); if (!b) return; let id = this.app.settings.deviceId; if (!id) { id = "win-" + crypto.randomUUID().replace(/-/g, "").slice(0, 28); this.app.saveSettings({ deviceId: id }); }
@@ -39,24 +40,23 @@ export class Ads {
 
   // ---------- what to show ----------
   sources(slot) {
-    const c = this.cfg; const out = []; const w = (c.ads && c.ads.weights) || { promo: 50, banner: 30, adsense: 20 };
-    if (Array.isArray(c.promo) && c.promo.length && (w.promo || 0) > 0) out.push({ kind: "promo", w: +w.promo });
-    const bl = (c.banners && c.banners["win_" + slot]) || []; if (bl.length && (w.banner || 0) > 0) out.push({ kind: "banner", w: +w.banner });
-    const ad = c.ads && c.ads.adsense; if (ad && ad.enabled && ad.client && ad.pageUrl && (w.adsense || 0) > 0) out.push({ kind: "adsense", w: +w.adsense });
+    const c = this.cfg; const out = []; const w = (c.ads && c.ads.weights) || { promo: 40, banner: 60 };
+    const bl = (c.banners && c.banners["win_" + slot]) || [];
+    if (bl.length && (w.banner || 0) > 0) out.push({ kind: "banner", w: +w.banner });
+    if (bl.length && c.ads && c.ads.bannerFirst !== false) return out; // banners first: promos only where no banner exists
+    if (Array.isArray(c.promo) && c.promo.length && (w.promo || 0) > 0 || (!bl.length && Array.isArray(c.promo) && c.promo.length)) out.push({ kind: "promo", w: Math.max(1, +w.promo || 1) });
     return out;
   }
   pick(slot) {
     const src = this.sources(slot); if (!src.length) return null; const total = src.reduce((a, s) => a + s.w, 0); const i = (this.rot[slot] = (this.rot[slot] || 0) + 1);
-    // weighted round-robin: walk the cumulative weights with a rotating pointer so each refresh shows a different source
     let r = ((i * 37) % Math.max(1, total)); let kind = src[0].kind; for (const s of src) { if (r < s.w) { kind = s.kind; break; } r -= s.w; }
     if (kind === "promo") { const list = this.cfg.promo; return { kind, item: list[i % list.length] }; }
-    if (kind === "banner") { const list = this.cfg.banners["win_" + slot]; return { kind, item: list[i % list.length] }; }
-    return { kind: "adsense", item: this.cfg.ads.adsense };
+    const list = this.cfg.banners["win_" + slot]; return { kind: "banner", item: list[i % list.length] };
   }
   render() {
-    const slots = { home: $("#homeAd"), side: $("#sbAd"), bottom: $("#adBottom") };
+    const slots = { top: $("#adTop"), home: $("#homeAd"), side: $("#sbAd"), bottom: $("#adBottom") };
     for (const [slot, el] of Object.entries(slots)) {
-      if (!el) continue; const show = this.on() && this.slotOn(slot) && this.afterFirstDelay() && !this.closed[slot] && (slot !== "side" || !$("#sidebar").hidden) && (slot !== "home" || !$("#home").hidden) && (slot !== "bottom" || !!this.app.cur || this.slotOn("bottomOnHome"));
+      if (!el) continue; const show = this.on() && this.slotOn(slot) && this.afterFirstDelay() && !this.closed[slot] && (slot !== "side" || !$("#sidebar").hidden) && (slot !== "home" || !$("#home").hidden) && (slot !== "bottom" || !!this.app.cur || this.slotOn("bottomOnHome")) && (slot !== "top" || !!this.app.cur);
       if (!show) { el.hidden = true; el.innerHTML = ""; continue; }
       const pick = this.pick(slot); if (!pick) { el.hidden = true; el.innerHTML = ""; continue; }
       this.fill(el, slot, pick); el.hidden = false;
@@ -66,7 +66,7 @@ export class Ads {
   }
   fill(el, slot, pick) {
     const [w, h] = SIZES[slot]; el.innerHTML = ""; const label = document.createElement("span"); label.className = "ad-label"; label.textContent = pick.kind === "promo" ? "LovePDF" : t("ads.sponsored"); el.appendChild(label);
-    if (slot === "bottom" && (!this.cfg.ads || this.cfg.ads.bottomClosable !== false)) { const x = document.createElement("button"); x.className = "ad-close"; x.title = t("close"); x.textContent = "✕"; x.onclick = () => { this.closed[slot] = true; el.hidden = true; el.innerHTML = ""; this.event("close", { slot, source: pick.kind }); }; el.appendChild(x); }
+    if ((slot === "bottom" || slot === "top") && (!this.cfg.ads || this.cfg.ads.bottomClosable !== false)) { const x = document.createElement("button"); x.className = "ad-close"; x.title = t("close"); x.textContent = "✕"; x.onclick = () => { this.closed[slot] = true; el.hidden = true; el.innerHTML = ""; this.event("close", { slot, source: pick.kind }); }; el.appendChild(x); }
     el.appendChild(this.node(slot, pick, w, h)); this.event("impression", { slot, source: pick.kind, ref: pick.item && (pick.item.id || pick.item.title) });
   }
   node(slot, pick, w, h) {
@@ -77,10 +77,9 @@ export class Ads {
       b.onclick = () => this.open(p.url || site, { slot, source: "promo", ref: p.id || p.title }); return b;
     }
     if (pick.kind === "banner") {
-      const bn = pick.item; const img = document.createElement("img"); img.className = "ad-img"; img.src = bn.image; img.alt = bn.alt || ""; img.style.maxHeight = (slot === "bottom" ? 60 : h) + "px"; img.title = bn.alt || ""; img.onclick = () => this.open(bn.link || `${site}/click/b/${bn.id}`, { slot, source: "banner", ref: bn.id }); return img;
+      const bn = pick.item; const img = document.createElement("img"); img.className = "ad-img"; img.src = bn.image; img.alt = bn.alt || ""; img.style.maxHeight = (slot === "bottom" || slot === "top" ? 60 : h) + "px"; img.title = bn.alt || ""; img.onclick = () => this.open(bn.link || `${site}/click/b/${bn.id}`, { slot, source: "banner", ref: bn.id }); return img;
     }
-    const ad = pick.item; const f = document.createElement("iframe"); f.className = "ad-frame"; f.width = slot === "bottom" ? Math.min(w, window.innerWidth - 60) : w; f.height = slot === "bottom" ? 60 : h; f.loading = "lazy"; f.referrerPolicy = "no-referrer-when-downgrade"; f.sandbox = "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox";
-    const unit = (ad.slots && ad.slots[slot]) || ""; f.src = `${ad.pageUrl}?slot=${encodeURIComponent(slot)}&unit=${encodeURIComponent(unit)}&w=${f.width}&h=${f.height}&v=${encodeURIComponent(this.app.version)}&theme=${document.documentElement.dataset.theme || "light"}`; return f;
+    return document.createElement("span");
   }
   open(url, meta) { this.event("click", meta); const u = url.includes("utm_") ? url : url + (url.includes("?") ? "&" : "?") + "utm_source=windows-app&utm_medium=" + encodeURIComponent(meta.slot || "app"); const b = bridge(); if (b) b.openExternal(u); else window.open(u); }
   notice() {
@@ -119,7 +118,25 @@ export class Ads {
       btn.onclick = () => closeModal();
     });
   }
-  rollDay() { if (this.stats.day !== DAY()) this.stats = { day: DAY(), actions: 0, inters: 0, lastInter: 0, edits: 0, saves: 0 }; }
+  /** After an edited PDF was saved: open the website (adminweb → Windows app → After save). */
+  afterSave() {
+    this.rollDay(); const a = this.cfg && this.cfg.afterSave; if (!a || !a.enabled || !this.on()) return; const every = Math.max(1, a.every || 1), maxDay = a.maxDay || 0;
+    if (this.stats.saves % every !== 0) return; if (maxDay && (this.stats.after || 0) >= maxDay) return; this.stats.after = (this.stats.after || 0) + 1; this.persist();
+    setTimeout(() => this.open(a.url, { slot: "aftersave", source: "site" }), 700); this.event("aftersave", { slot: "aftersave" });
+  }
+  /** Promo video at start / close. Resolves when the user skips or the video ends. */
+  video(when) {
+    return new Promise((resolve) => {
+      const v = this.cfg && this.cfg.video; this.rollDay(); if (!v || !this.on() || !(v.when === "both" || v.when === when) || (v.maxDay && (this.stats.videos || 0) >= v.maxDay)) return resolve(false);
+      this.stats.videos = (this.stats.videos || 0) + 1; this.persist(); this.event("video", { slot: when, source: v.kind });
+      const skip = Math.max(0, v.skipSec || 0); let left = skip; const player = v.kind === "youtube" ? `<iframe class="vid" src="${esc(v.embed)}" allow="autoplay; encrypted-media" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>` : `<video class="vid" src="${esc(v.src)}" autoplay playsinline controls></video>`;
+      const body = modal(v.title || t("ads.videoTitle"), `<div class="interstitial"><div class="vidbox">${player}</div><div class="row end" style="margin-top:10px">${v.clickUrl ? `<button class="btn btn-primary" id="vidGo">${esc(v.cta || t("ads.learnMore"))}</button>` : ""}<span class="cd" id="vidCd"></span><span class="sp"></span><button class="btn" id="vidSkip" ${skip ? "disabled" : ""}>${esc(when === "close" ? t("file.exit") : t("ads.skip"))}</button></div></div>`, { size: "", onClose: () => { clearInterval(iv); resolve(true); } });
+      const btn = $("#vidSkip", body), cd = $("#vidCd", body); const tick = () => { if (left <= 0) { btn.disabled = false; cd.textContent = ""; clearInterval(iv); return; } cd.textContent = t("ads.skipIn", { s: left }); left--; }; tick(); const iv = setInterval(tick, 1000);
+      btn.onclick = () => closeModal(); const go = $("#vidGo", body); if (go) go.onclick = () => this.open(v.clickUrl, { slot: when, source: "video" });
+      const vd = body.querySelector("video"); if (vd) vd.onended = () => { left = 0; tick(); };
+    });
+  }
+  rollDay() { if (this.stats.day !== DAY()) this.stats = { day: DAY(), actions: 0, inters: 0, lastInter: 0, edits: 0, saves: 0, after: 0, videos: 0 }; }
   persist() { this.app.saveSettings({ adStats: this.stats }); }
 
   // ---------- events → adminweb stats ----------

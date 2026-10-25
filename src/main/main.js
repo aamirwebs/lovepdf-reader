@@ -10,7 +10,7 @@ const { pathToFileURL } = require("node:url");
 const RENDERER = path.join(__dirname, "..", "renderer");
 const ROOT = path.join(__dirname, "..", "..");
 const isWin = process.platform === "win32";
-let win = null;
+let win = null; let forceQuit = false; let closingAck = false;
 let pendingFiles = [];
 let updater = null;
 
@@ -50,7 +50,9 @@ function createWindow() {
   win.loadURL("app://lovepdf/index.html");
   win.once("ready-to-show", () => win.show());
   const saveBounds = () => { if (!win) return; const m = win.isMaximized(); const r = win.getNormalBounds(); saveSettings({ bounds: { ...r, maximized: m } }); };
-  win.on("resize", saveBounds); win.on("move", saveBounds); win.on("close", saveBounds);
+  win.on("resize", saveBounds); win.on("move", saveBounds);
+  // Closing: let the renderer finish first (unsaved-changes prompt, optional promo video), then it calls app:quit(true).
+  win.on("close", (e) => { saveBounds(); if (forceQuit || !win || win.webContents.isLoading()) return; e.preventDefault(); send("app-closing", {}); setTimeout(() => { if (!forceQuit && win && !win.isDestroyed() && !closingAck) { forceQuit = true; win.close(); } }, 1500); });
   win.on("closed", () => { win = null; });
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: "deny" }; });
   win.webContents.on("did-finish-load", () => { if (pendingFiles.length) { win.webContents.send("open-files", pendingFiles.splice(0)); } });
@@ -108,7 +110,9 @@ ipcMain.handle("recent:clear", () => { saveSettings({ recent: [] }); app.clearRe
 ipcMain.handle("settings:get", () => { const { recent, bounds, lastDir, ...rest } = loadSettings(); return rest; });
 ipcMain.handle("settings:set", (e, obj) => { saveSettings(obj); if (obj.theme) nativeTheme.themeSource = obj.theme === "system" ? "system" : obj.theme; return true; });
 ipcMain.handle("app:info", () => ({ version: app.getVersion(), platform: process.platform, packaged: app.isPackaged, electron: process.versions.electron, chrome: process.versions.chrome, userData: app.getPath("userData"), os: `${require("node:os").type()} ${require("node:os").release()}`, locale: app.getLocale(), arch: process.arch }));
-ipcMain.handle("app:quit", () => { app.quit(); return true; });
+ipcMain.handle("app:quit", (e, force = false) => { forceQuit = true; if (win && !win.isDestroyed()) win.close(); else app.quit(); return true; });
+ipcMain.handle("app:closingAck", () => { closingAck = true; return true; });
+ipcMain.handle("app:cancelClose", () => { closingAck = false; forceQuit = false; return true; });
 ipcMain.handle("window:fullscreen", (e, v) => { if (!win) return false; win.setFullScreen(v == null ? !win.isFullScreen() : !!v); return win.isFullScreen(); });
 ipcMain.handle("window:devtools", () => { if (win) win.webContents.toggleDevTools(); return true; });
 ipcMain.handle("window:zoomFactor", (e, f) => { if (win && f) win.webContents.setZoomFactor(Math.max(0.6, Math.min(2, +f))); return win ? win.webContents.getZoomFactor() : 1; });

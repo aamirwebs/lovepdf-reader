@@ -62,7 +62,8 @@ button{font:inherit;color:inherit;cursor:pointer}input,select,textarea{font:inhe
 .ad-close{position:absolute;top:2px;inset-inline-end:4px;border:0;background:var(--panel);color:var(--mute);width:22px;height:22px;border-radius:50%;font-size:14px;line-height:22px;padding:0;box-shadow:0 1px 3px rgba(0,0,0,.2);z-index:2}.ad-close:hover{color:var(--r)}
 .ad-home{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);min-height:120px;overflow:hidden}
 .ad-side{border-top:1px solid var(--line);background:var(--panel);min-height:100px;padding:8px}
-.ad-bottom{border-top:1px solid var(--line);background:var(--bar);min-height:64px;padding:4px 10px}
+.ad-bottom{border-top:1px solid var(--line);background:var(--bar);min-height:64px;padding:4px 10px}.ad-top{border-bottom:1px solid var(--line);background:var(--bar);min-height:52px;padding:3px 10px}.ad-top .promo{padding:3px 6px}.ad-top .promo-ic{width:32px;height:32px}.ad-top .ad-img{max-height:52px}
+.vidbox{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}.vid{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
 .ad-img{display:block;max-width:100%;max-height:100%;border-radius:8px;cursor:pointer}.ad-frame{border:0;display:block;background:transparent}
 .promo{display:flex;align-items:center;gap:14px;padding:12px 14px;width:100%;cursor:pointer;text-align:start;border:0;background:transparent;color:inherit}.promo:hover{background:var(--hover)}.promo-ic{width:44px;height:44px;border-radius:12px;background:var(--g-soft);color:var(--g2);display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden}.promo-ic img{width:100%;height:100%;object-fit:cover}.promo-ic .i{width:24px;height:24px}
 .promo b{display:block;font-size:13.5px}.promo small{display:block;color:var(--mute);font-size:12px;margin-top:2px}.promo .cta{margin-inline-start:auto;flex:none}

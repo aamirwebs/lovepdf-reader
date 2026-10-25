@@ -1,7 +1,7 @@
 // Bridge between the sandboxed UI and the main process (contextIsolation on; only these functions are exposed).
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const inv = (ch, ...a) => ipcRenderer.invoke(ch, ...a);
-const listeners = { "open-files": [], menu: [], update: [] };
+const listeners = { "open-files": [], menu: [], update: [], "app-closing": [] };
 for (const ch of Object.keys(listeners)) ipcRenderer.on(ch, (e, data) => listeners[ch].forEach((fn) => { try { fn(data); } catch (err) { console.error(err); } }));
 contextBridge.exposeInMainWorld("lovepdf", {
   isDesktop: true,
@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld("lovepdf", {
   print: (o) => inv("app:print", o), printToPdf: (o) => inv("app:printToPdf", o),
   checkUpdates: () => inv("update:check"), downloadUpdate: () => inv("update:download"), installUpdate: () => inv("update:install"),
   setTitle: (t) => inv("window:title", t), setEdited: (v) => inv("window:setDocumentEdited", v),
-  quit: () => inv("app:quit"), fullscreen: (v) => inv("window:fullscreen", v), devtools: () => inv("window:devtools"), zoomFactor: (f) => inv("window:zoomFactor", f),
+  quit: (force = false) => inv("app:quit", force), closingAck: () => inv("app:closingAck"), cancelClose: () => inv("app:cancelClose"), fullscreen: (v) => inv("window:fullscreen", v), devtools: () => inv("window:devtools"), zoomFactor: (f) => inv("window:zoomFactor", f),
   pathOf: (file) => { try { return webUtils.getPathForFile(file); } catch { return ""; } },
   fetch: async (url, o = {}) => { const r = await inv("net:fetch", { url, method: o.method || "GET", headers: o.headers || {}, body: o.body ? (o.body instanceof Uint8Array ? o.body : new Uint8Array(o.body)) : null }); return { ok: r.ok, status: r.status, headers: r.headers, body: r.body.buffer.slice(r.body.byteOffset, r.body.byteOffset + r.body.byteLength) }; },
   on: (ch, fn) => { if (listeners[ch]) listeners[ch].push(fn); },
