@@ -1,0 +1,47 @@
+appId: me.lovepdf.reader
+productName: LovePDF Reader and Editor
+copyright: Copyright © 2026 LovePDF.me
+artifactName: LovePDF-Reader-Setup.${ext}
+directories:
+  output: dist
+  buildResources: build
+files:
+  - src/**
+  - vendor/**
+  - package.json
+  - "!**/*.map"
+asar: true
+compression: maximum
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  publisherName: LovePDF.me
+  verifyUpdateCodeSignature: false
+  fileAssociations:
+    - ext: pdf
+      name: PDF Document
+      description: PDF Document (LovePDF Reader)
+      icon: build/icon.ico
+      role: Editor
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: LovePDF Reader
+  runAfterFinish: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  license: LICENSE.txt
+  deleteAppDataOnUninstall: false
+  artifactName: LovePDF-Reader-Setup.${ext}
+publish:
+  provider: github
+  owner: aamirwebs
+  repo: lovepdf-reader
+  releaseType: release

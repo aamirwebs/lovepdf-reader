@@ -1,0 +1,32 @@
+# Builds the Windows installer on GitHub's servers.
+# - Manual run (Actions → Build Windows → Run workflow): installer is attached as a downloadable artifact.
+# - Publishing a GitHub Release (tag like v1.0.1): installer + latest.yml are uploaded to that release → auto-update works.
+name: Build Windows
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build installer (and publish to the release when triggered by one)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ("${{ github.event_name }}" -eq "release") { npx electron-builder --win --x64 --publish always } else { npx electron-builder --win --x64 --publish never }
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LovePDF-Reader-Setup
+          path: |
+            dist/*.exe
+            dist/latest.yml

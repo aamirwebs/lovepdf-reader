@@ -1,0 +1,23 @@
+{
+  "name": "lovepdf-reader",
+  "productName": "LovePDF Reader and Editor",
+  "version": "1.0.0",
+  "description": "Fast, free PDF reader and editor for Windows by LovePDF.me — read, annotate, edit, organize, merge and convert PDFs.",
+  "main": "src/main/main.js",
+  "author": "LovePDF.me <support@lovepdf.me>",
+  "homepage": "https://www.lovepdf.me",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "dist:all": "electron-builder --win --x64 --ia32"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  }
+}
