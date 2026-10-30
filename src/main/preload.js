@@ -2,7 +2,8 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const inv = (ch, ...a) => ipcRenderer.invoke(ch, ...a);
 const listeners = { "open-files": [], menu: [], update: [], "app-closing": [] };
-for (const ch of Object.keys(listeners)) ipcRenderer.on(ch, (e, data) => listeners[ch].forEach((fn) => { try { fn(data); } catch (err) { console.error(err); } }));
+const queued = { "open-files": [], menu: [], update: [], "app-closing": [] }; // events that arrived before the UI registered a listener (e.g. file double-clicked at startup)
+for (const ch of Object.keys(listeners)) ipcRenderer.on(ch, (e, data) => { if (!listeners[ch].length) { queued[ch].push(data); return; } listeners[ch].forEach((fn) => { try { fn(data); } catch (err) { console.error(err); } }); });
 contextBridge.exposeInMainWorld("lovepdf", {
   isDesktop: true,
   openDialog: (multi = true) => inv("dialog:open", { multi }),
@@ -22,5 +23,6 @@ contextBridge.exposeInMainWorld("lovepdf", {
   quit: (force = false) => inv("app:quit", force), closingAck: () => inv("app:closingAck"), cancelClose: () => inv("app:cancelClose"), fullscreen: (v) => inv("window:fullscreen", v), devtools: () => inv("window:devtools"), zoomFactor: (f) => inv("window:zoomFactor", f),
   pathOf: (file) => { try { return webUtils.getPathForFile(file); } catch { return ""; } },
   fetch: async (url, o = {}) => { const r = await inv("net:fetch", { url, method: o.method || "GET", headers: o.headers || {}, body: o.body ? (o.body instanceof Uint8Array ? o.body : new Uint8Array(o.body)) : null }); return { ok: r.ok, status: r.status, headers: r.headers, body: r.body.buffer.slice(r.body.byteOffset, r.body.byteOffset + r.body.byteLength) }; },
-  on: (ch, fn) => { if (listeners[ch]) listeners[ch].push(fn); },
+  on: (ch, fn) => { if (!listeners[ch]) return; listeners[ch].push(fn); const q = queued[ch].splice(0); q.forEach((d) => { try { fn(d); } catch (err) { console.error(err); } }); },
+  pending: () => inv("app:pending"),
 });

@@ -55,12 +55,15 @@ function createWindow() {
   win.on("close", (e) => { saveBounds(); if (forceQuit || !win || win.webContents.isLoading()) return; e.preventDefault(); send("app-closing", {}); setTimeout(() => { if (!forceQuit && win && !win.isDestroyed() && !closingAck) { forceQuit = true; win.close(); } }, 1500); });
   win.on("closed", () => { win = null; });
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: "deny" }; });
-  win.webContents.on("did-finish-load", () => { if (pendingFiles.length) { win.webContents.send("open-files", pendingFiles.splice(0)); } });
+  win.webContents.on("did-finish-load", () => { /* files opened at startup are delivered when the UI asks (app:pending) */ });
   buildMenu();
 }
 function send(ch, data) { if (win && !win.isDestroyed()) win.webContents.send(ch, data); }
-function openPaths(paths, print = false) { const pdfs = paths.filter((p) => /\.pdf$/i.test(p) && fs.existsSync(p)); if (!pdfs.length) return; if (print) pdfs.print = true; if (win && win.webContents && !win.webContents.isLoading()) { send("open-files", pdfs); if (print) send("menu", { cmd: "print", arg: pdfs[0] }); if (win.isMinimized()) win.restore(); win.focus(); } else pendingFiles.push(...pdfs); }
-const argvFiles = (argv) => argv.slice(1).filter((a) => /\.pdf$/i.test(a) && !a.startsWith("--"));
+let pendingPrint = false;
+function openPaths(paths, print = false) { const pdfs = paths.filter((p) => /\.pdf$/i.test(p) && fs.existsSync(p)); if (!pdfs.length) return; if (win && win.webContents && !win.webContents.isLoading() && uiReady) { send("open-files", pdfs); if (print) send("menu", { cmd: "print", arg: pdfs[0] }); if (win.isMinimized()) win.restore(); win.focus(); } else { pendingFiles.push(...pdfs); if (print) pendingPrint = true; } }
+let uiReady = false;
+ipcMain.handle("app:pending", () => { uiReady = true; const files = pendingFiles.splice(0); const print = pendingPrint; pendingPrint = false; return { files, print }; });
+const argvFiles = (argv) => argv.slice(1).filter((a) => /\.pdf"?$/i.test(a) && !a.startsWith("--")).map((a) => { let p = a.replace(/^"|"$/g, ""); try { if (!path.isAbsolute(p)) p = path.resolve(process.cwd(), p); } catch {} return p; });
 const wantsPrint = (argv) => argv.includes("--print");
 
 // ---------- menu (keyboard shortcuts; the bar itself stays hidden) ----------

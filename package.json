@@ -1,7 +1,7 @@
 {
   "name": "lovepdf-reader",
   "productName": "LovePDF Reader and Editor",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "LovePDF Reader and Editor",
   "main": "src/main/main.js",
   "author": "LovePDF.me <support@lovepdf.me>",

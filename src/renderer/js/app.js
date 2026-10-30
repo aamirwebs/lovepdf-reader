@@ -27,7 +27,9 @@ class App {
     this.wire(); this.updateAccountUi(); await this.renderHome();
     if (b && b.isFirstRun) { try { if (await b.isFirstRun()) setTimeout(() => this.firstRunPrompt(), 900); } catch {} }
     if (b) { b.on("open-files", (paths) => paths.forEach((p) => this.openPath(p))); b.on("menu", ({ cmd, arg }) => this.menuCmd(cmd, arg)); b.on("update", (u) => this.onUpdate(u)); b.on("app-closing", () => this.onClosing()); }
-    if (b && this.settings.reopen && this.settings.lastOpen && this.settings.lastOpen.length) { for (const p of this.settings.lastOpen.slice(0, 5)) { if (await b.exists(p)) this.openPath(p); } }
+    let openedAtStart = false;
+    if (b && b.pending) { try { const pend = await b.pending(); if (pend && pend.files && pend.files.length) { openedAtStart = true; for (const p of pend.files) await this.openPath(p); if (pend.print) this.menuCmd("print", pend.files[0]); } } catch {} }
+    if (!openedAtStart && b && this.settings.reopen && this.settings.lastOpen && this.settings.lastOpen.length) { for (const p of this.settings.lastOpen.slice(0, 5)) { if (await b.exists(p)) this.openPath(p); } }
     status(t("appName"), "v" + this.version);
     this.ads.init().catch(() => {});
   }
