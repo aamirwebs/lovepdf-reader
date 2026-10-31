@@ -8,10 +8,12 @@ const API = "https://app.lovepdf.me";
 const MM = 72 / 25.4;
 const uniq = (a) => [...new Set((a || []).map(Number).filter((n) => n >= 1))].sort((x, y) => x - y);
 
+const OPTS_ONLINE = new Set(["compress", "ocr-pdf", "protect-pdf", "translate-pdf", "pdf-to-word", "pdf-to-excel", "pdf-to-powerpoint", "pdf-to-jpg"]);
 export class Tools {
   constructor(app) { this.app = app; }
   async bytesOf(d) { return this.app.editor.hasEdits(d) ? await this.app.editor.flatten(d) : d.bytes; }
   async apply(d, bytes, msg = t("toast.applied")) { await d.replace(bytes); this.app.renderTabs(); toast(msg); if (this.app.ads) this.app.ads.action("edit"); }
+  countTool(id) { if (this.app.ads) this.app.ads.action("tool", { slot: id }); }
 
   menu() {
     const items = [
@@ -27,7 +29,9 @@ export class Tools {
   async run(id) {
     const d = this.app.current();
     const needDoc = !["merge"].includes(id); if (needDoc && !d) { toast(t("toast.needPdf")); return; }
+    if (!["crop", "sign", "image"].includes(id) && this.app.ads && !(await this.app.ads.gate("tool"))) return; // daily tools limit (adminweb → Apps)
     try {
+      if (!["crop", "sign", "image"].includes(id) && !OPTS_ONLINE.has(id)) this.countTool(id);
       if (id === "organize") return this.organize(d); if (id === "merge") return this.merge(d); if (id === "split") return this.split(d); if (id === "extract") return this.extract(d);
       if (id === "rotateAll") return this.rotatePages(d, "all", 90); if (id === "crop") { await this.app.setMode("edit"); this.app.editor.startCrop(d); return; } if (id === "blank") return this.blank(d); if (id === "watermark") return this.watermark(d); if (id === "pageNumbers") return this.pageNumbers(d); if (id === "crop") return this.crop(d);
       if (id === "sign") { await this.app.setMode("edit"); this.app.editor.setMode("signature"); return; } if (id === "image") { await this.app.setMode("edit"); this.app.editor.setMode("image"); return; }

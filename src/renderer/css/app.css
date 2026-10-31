@@ -104,3 +104,9 @@ button{font:inherit;color:inherit;cursor:pointer}input,select,textarea{font:inhe
 .btn .i{width:18px;height:18px;flex:none}.qt .i{width:24px;height:24px;color:var(--g2)}
 @media (max-width:1240px){#topbar .tb-text>span{display:none}#topbar .tb-text{padding-inline-end:9px}}@media (max-width:1060px){#topbar .seg button>span{display:none}#menubar .brand span{display:none}}
 .dim-ui{opacity:.35;pointer-events:none}
+
+/* update banner (top of window) */
+#updBar{display:flex;align-items:center;gap:10px;padding:7px 14px;background:linear-gradient(90deg,#0E8A4A,#13a35a);color:#fff;font-size:13px;z-index:150;position:relative}
+#updBar[hidden]{display:none}#updBar .ic{font-size:15px}#updBar b{font-weight:600}#updBar .btn{margin-left:4px}#updBar .btn-sm{padding:4px 10px;font-size:12px}
+#updBar .btn-primary{background:#fff;color:#0E8A4A;border-color:#fff}#updBar .btn:not(.btn-primary){background:transparent;color:#fff;border-color:rgba(255,255,255,.6)}
+#updBar .x{margin-left:auto;background:transparent;border:0;color:#fff;font-size:14px;cursor:pointer;opacity:.85}

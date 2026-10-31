@@ -85,7 +85,7 @@ function checkUpdates(manual = false) {
   try {
     if (!app.isPackaged) { if (manual) send("update", { state: "none", manual }); return; }
     if (!updater) {
-      const { autoUpdater } = require("electron-updater"); updater = autoUpdater; updater.autoDownload = false; updater.autoInstallOnAppQuit = true;
+      const { autoUpdater } = require("electron-updater"); updater = autoUpdater; updater.autoDownload = true; /* download in the background, then remind the user */ updater.autoInstallOnAppQuit = true;
       updater.on("update-available", (i) => send("update", { state: "available", version: i.version, notes: typeof i.releaseNotes === "string" ? i.releaseNotes : "" }));
       updater.on("update-not-available", () => send("update", { state: "none", manual: updater._manual }));
       updater.on("download-progress", (p) => send("update", { state: "downloading", percent: Math.round(p.percent) }));
@@ -155,7 +155,7 @@ if (!gotLock) { app.quit(); } else {
   app.whenReady().then(() => {
     const s = loadSettings(); if (s.theme && s.theme !== "system") nativeTheme.themeSource = s.theme;
     registerProtocol(); createWindow(); openPaths(argvFiles(process.argv), wantsPrint(process.argv));
-    setTimeout(() => checkUpdates(false), 8000);
+    setTimeout(() => checkUpdates(false), 8000); setInterval(() => checkUpdates(false), 6 * 3600 * 1000); // on start + every 6 hours
     app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

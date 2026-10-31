@@ -91,7 +91,7 @@ export class Ads {
   // ---------- actions, interstitials, limits ----------
   /** Count an action (edit applied / tool run / save). May show an interstitial afterwards. */
   action(kind, meta = {}) {
-    this.rollDay(); this.stats.actions++; if (kind === "edit") this.stats.edits++; if (kind === "save") this.stats.saves++; this.persist(); this.event(kind, meta);
+    this.rollDay(); this.stats.actions++; if (kind === "edit") this.stats.edits++; if (kind === "save") this.stats.saves++; if (kind === "tool") this.stats.tools = (this.stats.tools || 0) + 1; this.persist(); this.event(kind, meta);
     if (!this.on() || !this.slotOn("inter") || !this.afterFirstDelay()) return;
     const every = Math.max(1, this.freq("interEvery", 3)), minMin = this.freq("interMinMinutes", 10), maxDay = this.freq("interMaxDay", 8);
     if (this.stats.actions % every !== 0) return; if (this.stats.inters >= maxDay) return; if (Date.now() - this.stats.lastInter < minMin * 60000) return;
@@ -99,10 +99,11 @@ export class Ads {
   }
   /** Daily edit limit (adminweb → Windows app → Limits). Returns true when the action may proceed. */
   async gate(kind) {
-    this.rollDay(); const c = this.cfg; if (!c || !c.limits) return true; const lim = Number((c.limits.editsPerDay || {})[this.plan()] || 0); if (!lim || lim <= 0) return true;
-    if (this.stats.saves < lim) return true;
+    this.rollDay(); const c = this.cfg; if (!c || !c.limits) return true;
+    const table = kind === "tool" ? (c.limits.toolsPerDay || {}) : (c.limits.editsPerDay || {}); const lim = Number(table[this.plan()] || 0); if (!lim || lim <= 0) return true;
+    const used = kind === "tool" ? (this.stats.tools || 0) : this.stats.saves; if (used < lim) return true;
     const act = c.limits.action || "ad"; const msg = c.limits.message || t("limit.body", { n: lim });
-    if (act === "ad" && this.sources("inter").length) { const ok = await this.interstitial("limit", msg); if (ok) { this.stats.saves = Math.max(0, this.stats.saves - Math.ceil(lim / 2)); this.persist(); } return ok; }
+    if (act === "ad" && this.sources("inter").length) { const ok = await this.interstitial("limit", msg); if (ok) { if (kind === "tool") this.stats.tools = Math.max(0, (this.stats.tools || 0) - Math.ceil(lim / 2)); else this.stats.saves = Math.max(0, this.stats.saves - Math.ceil(lim / 2)); this.persist(); } return ok; }
     return new Promise((resolve) => {
       const body = modal(t("limit.title"), `<div class="form"><p>${esc(msg)}</p><div class="row end"><button class="btn" id="lmClose">${esc(t("cancel"))}</button>${act === "login" ? `<button class="btn btn-primary" id="lmLogin">${icon("login")} ${esc(t("online.login"))}</button>` : `<button class="btn btn-primary" id="lmUp">${icon("star")} ${esc(t("limit.upgrade"))}</button>`}</div></div>`, { size: "sm", onClose: () => resolve(false) });
       $("#lmClose", body).onclick = closeModal; const lg = $("#lmLogin", body); if (lg) lg.onclick = () => { closeModal(); this.app.loginDialog(); }; const up = $("#lmUp", body); if (up) up.onclick = () => { closeModal(); this.open((c.site || "https://www.lovepdf.me") + "/pricing", { slot: "limit", source: "upgrade" }); };

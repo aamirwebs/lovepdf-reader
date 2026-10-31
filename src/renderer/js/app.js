@@ -318,12 +318,14 @@ class App {
   }
   onUpdate(u) {
     const msg = $("#stUpdMsg"); const set = (s) => { if (msg) msg.textContent = s; };
-    if (u.state === "none") { if (u.manual) { set(t("set.upToDate")); toast(t("set.upToDate")); } }
-    else if (u.state === "available") { set(t("set.available", { v: u.version })); const body = modal(t("set.updates"), `<p>${esc(t("set.available", { v: u.version }))}</p><div class="prog" id="updProg" hidden><i style="width:0"></i></div><div class="row end"><button class="btn" id="updLater">${esc(t("cancel"))}</button><button class="btn btn-primary" id="updDl">⬇ ${esc(t("set.download"))}</button></div>`, { size: "sm" }); $("#updLater", body).onclick = closeModal; $("#updDl", body).onclick = () => { $("#updProg", body).hidden = false; $("#updDl", body).disabled = true; bridge().downloadUpdate(); }; }
-    else if (u.state === "downloading") { const p = $("#updProg"); if (p) { p.hidden = false; p.querySelector("i").style.width = u.percent + "%"; } set(t("set.downloading", { p: u.percent })); }
-    else if (u.state === "ready") { set(t("set.ready")); const body = modal(t("set.updates"), `<p>${esc(t("set.ready"))}</p><div class="row end"><button class="btn" id="updLater2">${esc(t("cancel"))}</button><button class="btn btn-primary" id="updGo">${esc(t("set.restart"))}</button></div>`, { size: "sm" }); $("#updLater2", body).onclick = closeModal; $("#updGo", body).onclick = () => bridge().installUpdate(); }
+    const bar = (html) => { let el = $("#updBar"); if (!el) { el = document.createElement("div"); el.id = "updBar"; document.body.prepend(el); } el.innerHTML = html; el.hidden = false; return el; };
+    if (u.state === "none") { const el = $("#updBar"); if (el) el.hidden = true; if (u.manual) { set(t("set.upToDate")); toast(t("set.upToDate")); } }
+    else if (u.state === "available") { set(t("set.available", { v: u.version })); bar(`<span class="ic">⬇</span><b>${esc(t("set.available", { v: u.version }))}</b> · <span id="updBarMsg">${esc(t("set.downloading", { p: 0 }))}</span><button class="x" id="updBarX" title="${esc(t("cancel"))}">✕</button>`); $("#updBarX").onclick = () => { $("#updBar").hidden = true; }; }
+    else if (u.state === "downloading") { const m = $("#updBarMsg"); if (m) m.textContent = t("set.downloading", { p: u.percent }); const p = $("#updProg"); if (p) { p.hidden = false; p.querySelector("i").style.width = u.percent + "%"; } set(t("set.downloading", { p: u.percent })); }
+    else if (u.state === "ready") { set(t("set.ready")); bar(`<span class="ic">✅</span><b>${esc(t("set.available", { v: u.version || "" }))}</b> — ${esc(t("set.ready"))} <button class="btn btn-primary btn-sm" id="updGo">${esc(t("set.restart"))}</button><button class="btn btn-sm" id="updLater">${esc(t("set.later"))}</button>`); $("#updGo").onclick = () => bridge().installUpdate(); $("#updLater").onclick = () => { $("#updBar").hidden = true; toast(t("set.laterHint"), 5000); }; }
     else if (u.state === "error") { if (u.manual) { set(t("set.updateErr")); toast(t("set.updateErr") + ": " + (u.error || ""), 4000); } }
   }
+
 
   // ---------- network / account (all requests go through the main process: no CORS, no cookies) ----------
   async net(url, o = {}) { const b = bridge(); if (b && b.fetch) return b.fetch(url, o); const r = await fetch(url, { method: o.method || "GET", headers: o.headers || {}, body: o.body }); return { ok: r.ok, status: r.status, headers: Object.fromEntries(r.headers.entries()), body: await r.arrayBuffer() }; }
