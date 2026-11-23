@@ -96,12 +96,8 @@ class App {
   async ask(title, placeholder, label) { return prompt(title, { label, value: placeholder }); }
 
   // ---------- print ----------
-  async print() {
-    const d = this.cur; if (!d) return; const area = $("#printArea"); area.innerHTML = ""; status(t("print") + "…");
-    const bytes = this.editor.hasEdits(d) ? await this.editor.flatten(d) : null; if (bytes) await d.replace(bytes);
-    for (const p of d.pages) { const vp = p.base.page.getViewport({ scale: 2, rotation: (p.base.page.rotate + d.rotation) % 360 }); const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; await p.base.page.render({ canvasContext: c.getContext("2d", { alpha: false }), viewport: vp }).promise; const img = new Image(); img.src = c.toDataURL("image/jpeg", 0.92); area.appendChild(img); status(t("rendering", { n: p.n })); }
-    await new Promise((r) => setTimeout(r, 150)); const b = bridge(); if (b && b.print) await b.print({}); else window.print(); area.innerHTML = ""; status("");
-  }
+  async print() { const { printDialog } = await import("./print.js"); return printDialog(this); }
+
 
   // ---------- modes ----------
   async setMode(m) { const d = this.cur; if (!d) { toast(t("toast.needPdf")); return; } if (m === "edit") { await this.editor.enter(d); } else { this.editor.leave(d); } $("#modeEdit").classList.toggle("on", m === "edit"); $("#modeView").classList.toggle("on", m !== "edit"); }

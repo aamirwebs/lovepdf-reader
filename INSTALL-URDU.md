@@ -62,3 +62,7 @@ Website zip **v3.3.0** install karne ke baad admin sidebar mein naya page **Wind
 ## Notes
 - Pehli baar Windows SmartScreen "unknown publisher" dikhayega (More info → Run anyway). Hatane ke liye code-signing certificate chahiye (optional, ~$200–400/saal).
 - Installer `.pdf` ko register karta hai; Windows 10/11 mein user ko Settings → Default apps mein LovePDF Reader chunna hota hai (app ke Settings / Help menu mein button hai).
+
+## v1.3.3 — Acrobat-style Print dialog
+- Ctrl+P / Print button → apna dialog: printer list, copies, paper size, pages (all / current / range), Fit / Actual / custom scale, pages per sheet (1–9), orientation auto/portrait/landscape, grayscale, both sides (long/short edge), live preview, "Save as PDF".
+- Chuna hua printer, paper, sizing settings yaad rehti hain.

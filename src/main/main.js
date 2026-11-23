@@ -134,6 +134,7 @@ ipcMain.handle("app:setDefault", async () => {
   return "unsupported";
 });
 ipcMain.handle("app:print", async (e, opts = {}) => new Promise((resolve) => { if (!win) return resolve(false); win.webContents.print({ silent: false, printBackground: true, ...opts }, (ok, reason) => resolve(ok ? true : reason || false)); }));
+ipcMain.handle("print:printers", async () => { try { return await win.webContents.getPrintersAsync(); } catch { return []; } });
 ipcMain.handle("app:printToPdf", async (e, opts = {}) => { if (!win) return null; const data = await win.webContents.printToPDF({ printBackground: true, ...opts }); return data; });
 ipcMain.handle("net:fetch", async (e, { url, method = "GET", headers = {}, body = null }) => {
   if (!/^https:\/\//i.test(String(url))) throw new Error("Only https URLs are allowed");
